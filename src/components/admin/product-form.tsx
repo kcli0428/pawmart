@@ -188,7 +188,7 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
       <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4">
         <p className="text-sm font-medium">從官網與網上搜尋並填入</p>
         <p className="mt-1 text-xs text-zinc-600">
-          輸入商品名稱（建議含品牌與種類，如「Ziwi Peak 風乾貓糧 鯖魚及羊肉配方」）。系統會優先讀取品牌官網商品頁的成份與保證分析。
+          輸入商品名稱（建議含品牌與種類，如「Ziwi Peak 風乾貓糧 鯖魚及羊肉配方」）。系統會優先讀取品牌官網；缺漏的成份、營養與說明會用 Google Gemini（Google 搜尋）補齊，不會使用 Open Food Facts 或零售網店內容。
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input

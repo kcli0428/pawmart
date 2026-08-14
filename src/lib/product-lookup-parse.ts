@@ -155,7 +155,9 @@ export type HtmlImage = {
   width: number;
 };
 
-const PUBLIC_HOST_RE = /(?:^|\.)(?:wikipedia\.org|wikimedia\.org|openfoodfacts\.org)$/i;
+const PUBLIC_HOST_RE = /(?:^|\.)(?:wikipedia\.org|wikimedia\.org)$/i;
+
+const BLOCKED_DATA_HOST_RE = /openfoodfacts/i;
 
 const OFFICIAL_BRAND_HOSTS = [
   "astkatta.com",
@@ -191,7 +193,7 @@ export function isRetailerUrl(url: string): boolean {
 
 export function isOfficialOrPublicUrl(url: string, query = ""): boolean {
   const host = hostnameOf(url);
-  if (!host || isRetailerUrl(url)) return false;
+  if (!host || isRetailerUrl(url) || BLOCKED_DATA_HOST_RE.test(host)) return false;
   if (PUBLIC_HOST_RE.test(host)) return true;
   if (OFFICIAL_BRAND_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))) return true;
   const brand = inferBrand(query)?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
@@ -878,7 +880,6 @@ export function preferOfficialHits(hits: SearchHit[], query: string): SearchHit[
     })();
     let value = 0;
     if (host.includes("wikipedia.org")) value += 6;
-    if (host.includes("openfoodfacts.org")) value += 8;
     if (brand && host.replace(/[^a-z0-9]+/g, "").includes(brand)) value += 10;
     if (/royalcanin|hillspet|purina|orijen|acana|ziwipets|astkatta/.test(host)) value += 8;
     value += scoreProductUrl(hit.url, query);

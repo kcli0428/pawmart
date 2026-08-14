@@ -1,3 +1,4 @@
+import { fillProductWithGemini, geminiConfigured } from "@/lib/gemini-product";
 import { slugify } from "@/lib/utils";
 import { spawn } from "node:child_process";
 import {
@@ -180,58 +181,6 @@ async function searchWikipedia(query: string, lang: "zh" | "en") {
   };
 }
 
-type OffSearch = {
-  products?: Array<{
-    product_name?: string;
-    brands?: string;
-    image_url?: string;
-    generic_name?: string;
-    ingredients_text?: string;
-    categories_tags?: string[];
-    nutriments?: Record<string, number | string>;
-  }>;
-};
-
-function offNumber(nutriments: Record<string, number | string> | undefined, key: string) {
-  const value = nutriments?.[key];
-  const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-async function searchOpenFoodFacts(query: string) {
-  const urls = [
-    `https://world.openfoodfacts.org/cgi/search.pl?action=process&search_terms=${encodeURIComponent(query)}&tagtype_0=categories&tag_contains_0=contains&tag_0=pet-food&json=1&page_size=5`,
-    `https://world.openfoodfacts.org/cgi/search.pl?action=process&search_terms=${encodeURIComponent(query)}&json=1&page_size=5`,
-  ];
-
-  for (const url of urls) {
-    const data = await fetchJson<OffSearch>(url);
-    const brand = inferBrand(query);
-    const product = data?.products?.find((item) => {
-      if (!item.product_name) return false;
-      if (!brand) return true;
-      const hay = `${item.product_name} ${item.brands ?? ""}`.toLowerCase();
-      return hay.includes(brand.toLowerCase());
-    });
-    if (!product) continue;
-    const nutriments = product.nutriments ?? {};
-    return {
-      name: product.product_name,
-      brand: product.brands?.split(",")[0]?.trim(),
-      description: product.generic_name || product.ingredients_text || "",
-      imageUrl: product.image_url,
-      proteinPct: offNumber(nutriments, "proteins_100g"),
-      fatPct: offNumber(nutriments, "fat_100g"),
-      fiberPct: offNumber(nutriments, "fiber_100g"),
-      kcalPer100g: offNumber(nutriments, "energy-kcal_100g"),
-      categories: (product.categories_tags ?? []).join(" "),
-      url: "https://world.openfoodfacts.org",
-    };
-  }
-
-  return null;
-}
-
 async function ocrImageUrl(url: string): Promise<string | undefined> {
   try {
     const res = await fetch(url, {
@@ -364,17 +313,24 @@ function nutritionFieldCount(nutrition: NutritionFacts) {
   return Object.values(nutrition).filter((value) => value != null).length;
 }
 
+function lifeStagesForSpecies(stages: string[], species: string[]): string[] {
+  const catOnly = species.includes("CAT") && !species.includes("DOG");
+  const dogOnly = species.includes("DOG") && !species.includes("CAT");
+  if (catOnly) return stages.filter((stage) => stage === "KITTEN" || stage.endsWith("_CAT"));
+  if (dogOnly) return stages.filter((stage) => stage === "PUPPY" || stage.endsWith("_DOG"));
+  return stages;
+}
+
 export async function lookupProduct(
   input: ProductLookupInput,
 ): Promise<ProductLookupResult | null> {
   const query = input.query.trim();
   if (query.length < 2) return null;
 
-  const [ddgHits, wikiZh, wikiEn, off] = await Promise.all([
+  const [ddgHits, wikiZh, wikiEn] = await Promise.all([
     gatherSearchHits(query),
     searchWikipedia(query, "zh"),
     searchWikipedia(query, "en"),
-    searchOpenFoodFacts(query),
   ]);
 
   const pagesToFetch = [...new Set([...extractUrlsFromQuery(query), ...ddgHits.map((hit) => hit.url)])]
@@ -386,20 +342,6 @@ export async function lookupProduct(
   ).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const wiki = wikiZh ?? wikiEn;
-  const combinedText = [
-    query,
-    wiki?.title,
-    wiki?.description,
-    off?.name,
-    off?.brand,
-    off?.description,
-    off?.categories,
-    ...ddgHits.flatMap((hit) => [hit.title, hit.snippet]),
-    ...scraped.flatMap((page) => [page.name, page.brand, page.description, page.ingredients, page.text?.slice(0, 2500)]),
-  ]
-    .filter(Boolean)
-    .join("\n");
-
   const officialPage = [...scraped]
     .map((page) => ({
       page,
@@ -413,47 +355,80 @@ export async function lookupProduct(
         scoreProductUrl(page.url, query),
     }))
     .sort((a, b) => b.score - a.score)[0]?.page;
+
+  const rankedForCopy = [...scraped].sort(
+    (a, b) =>
+      queryOverlapScore(`${b.name ?? ""} ${b.url} ${b.ingredients ?? ""}`, query) -
+      queryOverlapScore(`${a.name ?? ""} ${a.url} ${a.ingredients ?? ""}`, query),
+  );
+  const officialExcerpt = [
+    officialPage?.name,
+    officialPage?.brand,
+    officialPage?.description,
+    officialPage?.ingredients,
+    officialPage?.highlights,
+    officialPage?.text?.slice(0, 1800),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const gemini = await fillProductWithGemini({
+    query,
+    officialExcerpt: officialExcerpt || undefined,
+  });
+
+  const combinedText = [
+    query,
+    wiki?.title,
+    wiki?.description,
+    gemini?.description,
+    gemini?.ingredients,
+    ...ddgHits.flatMap((hit) => [hit.title, hit.snippet]),
+    ...scraped.flatMap((page) => [page.name, page.brand, page.description, page.ingredients, page.text?.slice(0, 2500)]),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const officialHasNutrition = nutritionFieldCount(officialPage?.nutrition ?? {}) >= 3;
-  const nutrition = officialHasNutrition
-    ? (officialPage?.nutrition ?? {})
-    : mergeNutrition(officialPage?.nutrition, nutritionFromPage(combinedText), {
-        proteinPct: off?.proteinPct,
-        fatPct: off?.fatPct,
-        fiberPct: off?.fiberPct,
-        kcalPer100g: off?.kcalPer100g,
-      });
+  const nutrition = mergeNutrition(
+    officialPage?.nutrition,
+    gemini?.nutrition,
+    officialHasNutrition ? undefined : nutritionFromPage(combinedText),
+  );
 
   const name = query;
 
   const brand = firstText(
     officialPage?.brand,
     scraped.find((page) => page.brand)?.brand,
-    off?.brand,
+    gemini?.brand,
     inferBrand(query),
     inferBrand(combinedText),
   );
-  const rankedForCopy = [...scraped].sort(
-    (a, b) =>
-      queryOverlapScore(`${b.name ?? ""} ${b.url} ${b.ingredients ?? ""}`, query) -
-      queryOverlapScore(`${a.name ?? ""} ${a.url} ${a.ingredients ?? ""}`, query),
-  );
-  const ingredients = refineIngredients(
+  const scrapedIngredients =
     rankedForCopy.map((page) => page.ingredients).find((value) => {
       return Boolean(value && (looksLikeIngredientList(value) || /\d+\s*%/.test(value)));
     }) ??
-      pickIngredients([
-        ...rankedForCopy.map((page) => page.ingredients),
-        extractIngredients(combinedText),
-      ]),
+    pickIngredients([
+      ...rankedForCopy.map((page) => page.ingredients),
+      extractIngredients(combinedText),
+    ]);
+  const ingredients = refineIngredients(
+    scrapedIngredients && (looksLikeIngredientList(scrapedIngredients) || /\d+\s*%/.test(scrapedIngredients))
+      ? scrapedIngredients
+      : pickIngredients([scrapedIngredients, gemini?.ingredients]),
     query,
   );
   const description = productDescription({
     query,
     ingredients,
-    blurb: inferProductBlurb(
-      query,
-      [officialPage?.name, officialPage?.description, officialPage?.highlights].filter(Boolean).join("\n"),
-    ),
+    blurb:
+      gemini?.description ||
+      inferProductBlurb(
+        query,
+        [officialPage?.name, officialPage?.description, officialPage?.highlights, gemini?.description]
+          .filter(Boolean)
+          .join("\n"),
+      ),
     highlights: officialPage?.highlights,
     pageDescription: officialPage?.description,
     wiki: wiki?.description,
@@ -478,14 +453,15 @@ export async function lookupProduct(
     rankedForCopy.find((page) => page.priceHkdDollars)?.priceHkdDollars,
     extractHkdPrice(`${query}\n${officialPage?.text?.slice(0, 2000) ?? ""}`),
   );
-  const species = inferProductSpecies(
-    query,
-    [officialPage?.name, officialPage?.description, officialPage?.highlights].filter(Boolean).join("\n"),
-  );
-  const lifeStages = inferProductLifeStages(
-    query,
-    [officialPage?.name, officialPage?.highlights, officialPage?.description].filter(Boolean).join("\n"),
-  );
+  const officialCopy = [officialPage?.name, officialPage?.description, officialPage?.highlights]
+    .filter(Boolean)
+    .join("\n");
+  let species = inferProductSpecies(query, `${officialCopy}\n${gemini?.description ?? ""}`);
+  if (!species.length && gemini?.suitableFor.length) species = gemini.suitableFor;
+  const inferredStages = inferProductLifeStages(query, `${officialCopy}\n${gemini?.description ?? ""}`);
+  const lifeStages = inferredStages.length
+    ? inferredStages
+    : lifeStagesForSpecies(gemini?.lifeStages ?? [], species);
 
   const sources: { title: string; url: string }[] = [];
   if (officialPage) {
@@ -495,7 +471,9 @@ export async function lookupProduct(
     });
   }
   if (wiki) sources.push({ title: `Wikipedia：${wiki.title}`, url: wiki.url });
-  if (off) sources.push({ title: "Open Food Facts", url: off.url });
+  for (const source of gemini?.sources ?? []) {
+    if (!sources.some((item) => item.url === source.url)) sources.push(source);
+  }
   for (const hit of ddgHits.slice(0, 3)) {
     if (!sources.some((source) => source.url === hit.url)) {
       sources.push({ title: hit.title, url: hit.url });
@@ -533,8 +511,12 @@ export async function lookupProduct(
     packSizes,
     priceDollars,
     sources,
-    notes: [ingredients ? undefined : officialPage?.ingredientNote].filter(
-      (note): note is string => Boolean(note),
-    ),
+    notes: [
+      ingredients ? undefined : officialPage?.ingredientNote,
+      gemini ? "部分資料由 Google Gemini 根據公開搜尋補齊。" : undefined,
+      !gemini && !geminiConfigured()
+        ? "未設定 GEMINI_API_KEY，無法用 Gemini 補齊成份／營養。"
+        : undefined,
+    ].filter((note): note is string => Boolean(note)),
   };
 }

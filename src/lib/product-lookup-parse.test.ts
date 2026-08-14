@@ -284,6 +284,10 @@ describe("nutrition and inference", () => {
     assert.match(kidneyPicked ?? "", /kidney-chicken-soup/);
     assert.equal(isOfficialOrPublicUrl("https://www.gogopet.com.hk/product/x", kidneyQuery), false);
     assert.equal(
+      isOfficialOrPublicUrl("https://world.openfoodfacts.org/product/123", kidneyQuery),
+      false,
+    );
+    assert.equal(
       isOfficialOrPublicUrl("https://www.astkatta.com/kidney-care-series", kidneyQuery),
       true,
     );

@@ -18,7 +18,7 @@ export default async function NewProductPage() {
       </Link>
       <h1 className="mt-2 text-3xl font-bold">新增商品</h1>
       <p className="mt-1 text-sm text-zinc-600">
-        輸入名稱後按「搜尋並填入」，可從品牌官網帶出分類、成份、保證分析與規格。
+        輸入名稱後按「搜尋並填入」，可從品牌官網帶出分類、成份、保證分析與規格；缺漏欄位由 Google Gemini 補齊。
       </p>
       <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6">
         <ProductForm categories={sortCategories(categories)} allergens={allergens} />
