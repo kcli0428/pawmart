@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, Package, Users } from "lucide-react";
+import { AlertTriangle, ClipboardList, Package, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getExpiringLots } from "@/lib/inventory";
@@ -12,7 +12,7 @@ export default async function AdminDashboardPage() {
   const [productCount, orderCount, userCount, expiringLots] = await Promise.all([
     prisma.product.count(),
     prisma.order.count(),
-    prisma.user.count({ where: { role: "CUSTOMER" } }),
+    prisma.user.count(),
     getExpiringLots(30),
   ]);
 
@@ -24,8 +24,8 @@ export default async function AdminDashboardPage() {
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         {[
           { label: "商品", value: productCount, icon: Package, href: "/admin/products" },
-          { label: "訂單", value: orderCount, icon: Package, href: "/admin" },
-          { label: "會員", value: userCount, icon: Users, href: "/admin" },
+          { label: "訂單", value: orderCount, icon: ClipboardList, href: "/admin/orders" },
+          { label: "會員", value: userCount, icon: Users, href: "/admin/members" },
         ].map(({ label, value, icon: Icon, href }) => (
           <Link
             key={label}
@@ -49,6 +49,16 @@ export default async function AdminDashboardPage() {
             <li>
               <Link href="/admin/products" className="text-amber-700 hover:underline">
                 商品管理 →
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/orders" className="text-amber-700 hover:underline">
+                訂單管理 →
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/members" className="text-amber-700 hover:underline">
+                會員管理 →
               </Link>
             </li>
             <li>

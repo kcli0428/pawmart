@@ -64,3 +64,23 @@ export async function processDueSubscriptionsAction(): Promise<void> {
   revalidatePath("/admin/crm");
   revalidatePath("/admin");
 }
+
+const ORDER_STATUSES = ["PENDING", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"] as const;
+
+export async function updateOrderStatusAction(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!id || !ORDER_STATUSES.includes(status as (typeof ORDER_STATUSES)[number])) {
+    return;
+  }
+
+  await prisma.order.update({
+    where: { id },
+    data: { status: status as (typeof ORDER_STATUSES)[number] },
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${id}`);
+}
