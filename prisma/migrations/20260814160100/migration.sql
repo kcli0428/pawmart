@@ -22,38 +22,44 @@ ALTER TABLE "Pet"
   );
 
 ALTER TABLE "Product"
-  ALTER COLUMN "lifeStages" TYPE "PetLifeStage_new"[]
-  USING (
-    COALESCE((
-      SELECT ARRAY_AGG(DISTINCT mapped ORDER BY mapped)
-      FROM (
-        SELECT
-          CASE
-            WHEN stage::text = 'PUPPY' THEN 'PUPPY'::"PetLifeStage_new"
-            WHEN stage::text = 'KITTEN' THEN 'KITTEN'::"PetLifeStage_new"
-            WHEN stage::text = 'ADULT' AND "suitableFor" @> ARRAY['CAT'::"PetSpecies"] THEN 'ADULT_CAT'::"PetLifeStage_new"
-            WHEN stage::text = 'SENIOR' AND "suitableFor" @> ARRAY['CAT'::"PetSpecies"] THEN 'SENIOR_CAT'::"PetLifeStage_new"
-            ELSE NULL
-          END AS mapped
-        FROM unnest("lifeStages") AS stage
-        UNION ALL
-        SELECT
-          CASE
-            WHEN stage::text = 'ADULT' AND (
-              "suitableFor" @> ARRAY['DOG'::"PetSpecies"]
-              OR NOT ("suitableFor" && ARRAY['CAT'::"PetSpecies", 'DOG'::"PetSpecies"])
-            ) THEN 'ADULT_DOG'::"PetLifeStage_new"
-            WHEN stage::text = 'SENIOR' AND (
-              "suitableFor" @> ARRAY['DOG'::"PetSpecies"]
-              OR NOT ("suitableFor" && ARRAY['CAT'::"PetSpecies", 'DOG'::"PetSpecies"])
-            ) THEN 'SENIOR_DOG'::"PetLifeStage_new"
-            ELSE NULL
-          END
-        FROM unnest("lifeStages") AS stage
-      ) mapped_stages
-      WHERE mapped IS NOT NULL
-    ), ARRAY[]::"PetLifeStage_new"[])
+  ADD COLUMN "lifeStages_new" "PetLifeStage_new"[] NOT NULL DEFAULT ARRAY[]::"PetLifeStage_new"[];
+
+UPDATE "Product"
+SET "lifeStages_new" = "lifeStages_new" || ARRAY['PUPPY'::"PetLifeStage_new"]
+WHERE "lifeStages" @> ARRAY['PUPPY'::"PetLifeStage"];
+
+UPDATE "Product"
+SET "lifeStages_new" = "lifeStages_new" || ARRAY['KITTEN'::"PetLifeStage_new"]
+WHERE "lifeStages" @> ARRAY['KITTEN'::"PetLifeStage"];
+
+UPDATE "Product"
+SET "lifeStages_new" = "lifeStages_new" || ARRAY['ADULT_CAT'::"PetLifeStage_new"]
+WHERE "lifeStages" @> ARRAY['ADULT'::"PetLifeStage"]
+  AND "suitableFor" @> ARRAY['CAT'::"PetSpecies"];
+
+UPDATE "Product"
+SET "lifeStages_new" = "lifeStages_new" || ARRAY['ADULT_DOG'::"PetLifeStage_new"]
+WHERE "lifeStages" @> ARRAY['ADULT'::"PetLifeStage"]
+  AND (
+    "suitableFor" @> ARRAY['DOG'::"PetSpecies"]
+    OR NOT ("suitableFor" && ARRAY['CAT'::"PetSpecies", 'DOG'::"PetSpecies"])
   );
+
+UPDATE "Product"
+SET "lifeStages_new" = "lifeStages_new" || ARRAY['SENIOR_CAT'::"PetLifeStage_new"]
+WHERE "lifeStages" @> ARRAY['SENIOR'::"PetLifeStage"]
+  AND "suitableFor" @> ARRAY['CAT'::"PetSpecies"];
+
+UPDATE "Product"
+SET "lifeStages_new" = "lifeStages_new" || ARRAY['SENIOR_DOG'::"PetLifeStage_new"]
+WHERE "lifeStages" @> ARRAY['SENIOR'::"PetLifeStage"]
+  AND (
+    "suitableFor" @> ARRAY['DOG'::"PetSpecies"]
+    OR NOT ("suitableFor" && ARRAY['CAT'::"PetSpecies", 'DOG'::"PetSpecies"])
+  );
+
+ALTER TABLE "Product" DROP COLUMN "lifeStages";
+ALTER TABLE "Product" RENAME COLUMN "lifeStages_new" TO "lifeStages";
 
 DROP TYPE "PetLifeStage";
 ALTER TYPE "PetLifeStage_new" RENAME TO "PetLifeStage";
