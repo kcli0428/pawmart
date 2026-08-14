@@ -1,16 +1,21 @@
-import { PetLifeStage, PetSpecies } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  nutritionCaption,
+  scoreProductForPet,
+  type PetProfile,
+} from "@/lib/nutrition-score";
 
-type PetProfile = {
-  species: PetSpecies;
-  lifeStage?: PetLifeStage | null;
-  weightKg?: number | null;
-  allergies?: string[];
-};
+export type { PetProfile } from "@/lib/nutrition-score";
+export {
+  estimateDailyKcal,
+  gramsNeededPerDay,
+  nutritionCaption,
+  packDaysOfSupply,
+  scoreProductForPet,
+} from "@/lib/nutrition-score";
 
 /**
- * MVP recommendation: filter by species, life stage, and exclude allergens.
- * Phase 3: add nutrition calculation (kcal/day) and scoring.
+ * Filter by species, life stage, and allergens, then rank by kcal / pack duration fit.
  */
 export async function getRecommendationsForPet(pet: PetProfile, limit = 8) {
   const products = await prisma.product.findMany({
@@ -23,7 +28,12 @@ export async function getRecommendationsForPet(pet: PetProfile, limit = 8) {
             NOT: {
               allergens: {
                 some: {
-                  allergen: { name: { in: pet.allergies } },
+                  allergen: {
+                    OR: [
+                      { name: { in: pet.allergies, mode: "insensitive" } },
+                      { nameZh: { in: pet.allergies } },
+                    ],
+                  },
                 },
               },
             },
@@ -35,34 +45,32 @@ export async function getRecommendationsForPet(pet: PetProfile, limit = 8) {
       allergens: { include: { allergen: true } },
       category: true,
     },
-    take: limit,
+    take: Math.max(limit * 4, 16),
   });
 
-  return products.filter((p) => p.variants.length > 0);
-}
-
-export function estimateDailyKcal(
-  species: PetSpecies,
-  weightKg: number,
-  lifeStage?: PetLifeStage | null,
-): number {
-  const isYoung =
-    lifeStage === PetLifeStage.PUPPY || lifeStage === PetLifeStage.KITTEN;
-  const isSenior = lifeStage === PetLifeStage.SENIOR;
-
-  if (species === PetSpecies.DOG) {
-    const rer = 70 * Math.pow(weightKg, 0.75);
-    if (isYoung) return Math.round(rer * 2);
-    if (isSenior) return Math.round(rer * 1.2);
-    return Math.round(rer * 1.4);
-  }
-
-  if (species === PetSpecies.CAT) {
-    const rer = 70 * Math.pow(weightKg, 0.75);
-    if (isYoung) return Math.round(rer * 2.5);
-    if (isSenior) return Math.round(rer * 1.1);
-    return Math.round(rer * 1.2);
-  }
-
-  return Math.round(70 * Math.pow(weightKg, 0.75));
+  return products
+    .filter((product) => product.variants.length > 0)
+    .map((product) => {
+      const packWeightGrams =
+        product.variants.find((variant) => variant.weightGrams != null)?.weightGrams ?? null;
+      const score = scoreProductForPet(
+        {
+          kcalPer100g: product.kcalPer100g,
+          proteinPct: product.proteinPct,
+          lifeStages: product.lifeStages,
+          packWeightGrams,
+        },
+        pet,
+      );
+      const caption = nutritionCaption(
+        {
+          kcalPer100g: product.kcalPer100g,
+          packWeightGrams,
+        },
+        pet,
+      );
+      return { ...product, score, caption };
+    })
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "zh-Hant"))
+    .slice(0, limit);
 }

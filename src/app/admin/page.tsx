@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, Package, Users } from "lucide-react";
+import { AlertTriangle, ClipboardList, Package, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getExpiringLots } from "@/lib/inventory";
@@ -12,7 +12,7 @@ export default async function AdminDashboardPage() {
   const [productCount, orderCount, userCount, expiringLots] = await Promise.all([
     prisma.product.count(),
     prisma.order.count(),
-    prisma.user.count({ where: { role: "CUSTOMER" } }),
+    prisma.user.count(),
     getExpiringLots(30),
   ]);
 
@@ -24,8 +24,8 @@ export default async function AdminDashboardPage() {
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         {[
           { label: "商品", value: productCount, icon: Package, href: "/admin/products" },
-          { label: "訂單", value: orderCount, icon: Package, href: "/admin" },
-          { label: "會員", value: userCount, icon: Users, href: "/admin" },
+          { label: "訂單", value: orderCount, icon: ClipboardList, href: "/admin/orders" },
+          { label: "會員", value: userCount, icon: Users, href: "/admin/members" },
         ].map(({ label, value, icon: Icon, href }) => (
           <Link
             key={label}
@@ -52,8 +52,23 @@ export default async function AdminDashboardPage() {
               </Link>
             </li>
             <li>
+              <Link href="/admin/orders" className="text-amber-700 hover:underline">
+                訂單管理 →
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/members" className="text-amber-700 hover:underline">
+                會員管理 →
+              </Link>
+            </li>
+            <li>
               <Link href="/admin/inventory" className="text-amber-700 hover:underline">
                 批號與庫存 →
+              </Link>
+            </li>
+            <li>
+              <Link href="/admin/crm" className="text-amber-700 hover:underline">
+                CRM 與自動化行銷 →
               </Link>
             </li>
           </ul>
@@ -83,13 +98,14 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-amber-50/50 p-6 text-sm text-zinc-600">
-        <p className="font-medium text-zinc-800">Phase 2–3 模組預覽</p>
+      <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6 text-sm text-zinc-600">
+        <p className="font-medium text-zinc-800">已啟用模組</p>
         <ul className="mt-2 list-inside list-disc space-y-1">
-          <li>訂閱制 / 自動定期補貨（Stripe Subscription）</li>
-          <li>「快吃完了」催購提醒（CRM 自動化）</li>
-          <li>生日與生命階段行銷</li>
-          <li>分級寵物點數獎勵</li>
+          <li>批號 FEFO 扣減、進貨入庫（整箱自動拆單件）、盤點／調撥、到期電郵</li>
+          <li>單罐 / 整箱 / 混搭組合包自動拆包扣庫存</li>
+          <li>訂閱制定期補貨、「快吃完了」催購、生日與生命階段行銷電郵</li>
+          <li>分級寵物點數（青銅 → 白金）</li>
+          <li>商品 CRUD、訂單出貨、會員地址與購物車數量調整</li>
         </ul>
       </div>
     </div>

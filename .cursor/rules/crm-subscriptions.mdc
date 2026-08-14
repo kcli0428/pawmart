@@ -1,0 +1,16 @@
+---
+description: Subscriptions, reorder/birthday/life-stage CRM, and pet points
+globs: src/lib/campaigns.ts,src/lib/crm.ts,src/lib/points.ts,src/app/admin/crm/**/*.tsx,src/app/account/subscriptions/**/*.tsx,src/app/account/points/**/*.tsx,src/app/api/cron/**/*.ts
+alwaysApply: false
+---
+
+# CRM, subscriptions, and points
+
+- Subscriptions today are **fulfillment schedules**, not Stripe Billing. `processDueSubscriptions` / cron creates an order and deducts stock. Real recurring charges are Phase 4.
+- Reorder (“快吃完了”): subscription `nextDeliveryAt` within 7 days, or remaining feeding days from last matching food order ≤ 7 (`daysOfFoodRemaining`).
+- Birthdays: `daysUntilBirthday` within 14 days. Life stage: `inferredLifeStage` vs stored `Pet.lifeStage` (dog senior ≥ 8y, cat senior ≥ 10y).
+- `generateCampaigns` must not duplicate the same `userId+petId+type` within 7 days.
+- Sending: `sendCampaign` / `sendPendingCampaigns` call `sendEmail()` then mark `SENT`. Unset `RESEND_API_KEY` simulates (console log) but still marks sent. Cron `POST /api/cron/crm` also generates, sends pending campaigns, and sends expiry alerts.
+- Cron: If `CRON_SECRET` is set, require `Authorization: Bearer`.
+- Points: 1 point per HKD (`Math.floor(cents / 100)`). Tiers: Bronze 0, Silver 500, Gold 2000, Platinum 5000. Redeem-at-checkout is not built yet — do not silently discount.
+- Keep date/kcal/tier helpers in `src/lib/crm.ts` and `src/lib/points.ts` with tests.

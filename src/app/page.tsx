@@ -3,8 +3,20 @@ import { ArrowRight, Heart, Shield, Sparkles, Truck } from "lucide-react";
 import { ProductCard } from "@/components/products/product-card";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/prisma";
+import { sortCategories } from "@/lib/constants";
+import { auth } from "@/lib/auth";
+import { getRecommendationsForPet } from "@/lib/recommendations";
 
 export default async function HomePage() {
+  const session = await auth();
+  const firstPet = session?.user
+    ? await prisma.pet.findFirst({
+        where: { userId: session.user.id },
+        orderBy: { createdAt: "asc" },
+      })
+    : null;
+  const personalized = firstPet ? await getRecommendationsForPet(firstPet, 4) : [];
+
   const featuredProducts = await prisma.product.findMany({
     where: { isActive: true },
     include: {
@@ -18,10 +30,11 @@ export default async function HomePage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const categories = await prisma.category.findMany({
-    where: { parentId: null },
-    take: 6,
-  });
+  const categories = sortCategories(
+    await prisma.category.findMany({
+      where: { parentId: null },
+    }),
+  );
 
   return (
     <div>
@@ -95,14 +108,19 @@ export default async function HomePage() {
 
       <section className="mx-auto max-w-6xl px-4 py-16">
         <div className="flex items-end justify-between">
-          <h2 className="text-2xl font-bold">精選商品</h2>
-          <Link href="/products" className="text-sm font-medium text-amber-700 hover:underline">
+          <h2 className="text-2xl font-bold">
+            {firstPet ? `為 ${firstPet.name} 精選` : "精選商品"}
+          </h2>
+          <Link
+            href={firstPet ? `/products?petId=${firstPet.id}` : "/products"}
+            className="text-sm font-medium text-amber-700 hover:underline"
+          >
             查看全部 →
           </Link>
         </div>
-        {featuredProducts.length > 0 ? (
+        {(personalized.length > 0 ? personalized : featuredProducts).length > 0 ? (
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {featuredProducts.map((product) => {
+            {(personalized.length > 0 ? personalized : featuredProducts).map((product) => {
               const variant = product.variants[0];
               if (!variant) return null;
               return (
@@ -114,6 +132,7 @@ export default async function HomePage() {
                   imageUrl={product.imageUrl}
                   priceHkd={variant.priceHkd}
                   compareAtPrice={variant.compareAtPrice}
+                  caption={"caption" in product ? product.caption : undefined}
                 />
               );
             })}

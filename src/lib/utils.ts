@@ -13,10 +13,19 @@ export function formatHkd(cents: number): string {
 }
 
 export function slugify(text: string): string {
-  return text
+  const ascii = text
     .toLowerCase()
     .trim()
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+  return ascii;
+}
+
+export function dollarsToCents(value: string | number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error("Invalid price");
+  }
+  return Math.round(n * 100);
 }

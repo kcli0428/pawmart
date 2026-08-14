@@ -17,7 +17,7 @@ async function main() {
   const adminHash = await bcrypt.hash("admin123", 10);
   const userHash = await bcrypt.hash("demo1234", 10);
 
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "admin@pawmart.hk" },
     update: {},
     create: {
@@ -40,16 +40,40 @@ async function main() {
     },
   });
 
-  const catFood = await prisma.category.upsert({
-    where: { slug: "cat-food" },
-    update: {},
-    create: { name: "貓糧", slug: "cat-food", description: "乾糧、濕糧、副食罐" },
+  await prisma.category.upsert({
+    where: { slug: "cat-dry-food" },
+    update: { name: "貓乾糧" },
+    create: { name: "貓乾糧", slug: "cat-dry-food", description: "貓用乾糧、風乾糧" },
   });
 
-  const dogFood = await prisma.category.upsert({
-    where: { slug: "dog-food" },
-    update: {},
-    create: { name: "狗糧", slug: "dog-food", description: "各階段犬隻主糧" },
+  const catWet = await prisma.category.upsert({
+    where: { slug: "cat-wet-food" },
+    update: { name: "貓濕糧" },
+    create: { name: "貓濕糧", slug: "cat-wet-food", description: "貓用罐頭、慕絲、湯包" },
+  });
+
+  const dogDry = await prisma.category.upsert({
+    where: { slug: "dog-dry-food" },
+    update: { name: "狗乾糧" },
+    create: { name: "狗乾糧", slug: "dog-dry-food", description: "狗用乾糧、風乾糧" },
+  });
+
+  await prisma.category.upsert({
+    where: { slug: "dog-wet-food" },
+    update: { name: "狗濕糧" },
+    create: { name: "狗濕糧", slug: "dog-wet-food", description: "狗用罐頭、濕糧" },
+  });
+
+  await prisma.product.updateMany({
+    where: { slug: "premium-cat-pate-400g" },
+    data: { categoryId: catWet.id },
+  });
+  await prisma.product.updateMany({
+    where: { slug: "salmon-dog-kibble-2kg" },
+    data: { categoryId: dogDry.id },
+  });
+  await prisma.category.deleteMany({
+    where: { slug: { in: ["cat-food", "dog-food"] } },
   });
 
   const chicken = await prisma.allergen.upsert({
@@ -58,27 +82,32 @@ async function main() {
     create: { name: "chicken", nameZh: "雞肉" },
   });
 
-  const grain = await prisma.allergen.upsert({
+  await prisma.allergen.upsert({
     where: { name: "grain" },
     update: {},
     create: { name: "grain", nameZh: "穀物" },
   });
 
+  const catLifeStages = [
+    PetLifeStage.KITTEN,
+    PetLifeStage.ADULT_CAT,
+    PetLifeStage.SENIOR_CAT,
+  ];
   const catProduct = await prisma.product.upsert({
     where: { slug: "premium-cat-pate-400g" },
-    update: {},
+    update: { lifeStages: catLifeStages, categoryId: catWet.id },
     create: {
       name: "Premium 貓用肉泥罐 400g",
       slug: "premium-cat-pate-400g",
       brand: "PawChoice",
       description: "全齡貓適用的高蛋白肉泥罐，無穀配方。",
-      categoryId: catFood.id,
+      categoryId: catWet.id,
       proteinPct: 11,
       fatPct: 5,
       fiberPct: 1,
       kcalPer100g: 95,
       suitableFor: [PetSpecies.CAT],
-      lifeStages: [PetLifeStage.KITTEN, PetLifeStage.ADULT, PetLifeStage.SENIOR],
+      lifeStages: catLifeStages,
       variants: {
         create: [
           {
@@ -110,19 +139,22 @@ async function main() {
 
   const dogProduct = await prisma.product.upsert({
     where: { slug: "salmon-dog-kibble-2kg" },
-    update: {},
+    update: {
+      lifeStages: [PetLifeStage.ADULT_DOG],
+      categoryId: dogDry.id,
+    },
     create: {
       name: "三文魚成犬糧 2kg",
       slug: "salmon-dog-kibble-2kg",
       brand: "OceanPaws",
       description: "富含 Omega-3，適合成犬日常主糧。",
-      categoryId: dogFood.id,
+      categoryId: dogDry.id,
       proteinPct: 26,
       fatPct: 14,
       fiberPct: 4,
       kcalPer100g: 360,
       suitableFor: [PetSpecies.DOG],
-      lifeStages: [PetLifeStage.ADULT],
+      lifeStages: [PetLifeStage.ADULT_DOG],
       variants: {
         create: [
           {
@@ -139,7 +171,11 @@ async function main() {
     include: { variants: true },
   });
 
-  const singleVariant = catProduct.variants.find((v) => v.unitType === ProductUnitType.SINGLE)!;
+  const singleVariant =
+    catProduct.variants.find((v) => v.unitType === ProductUnitType.SINGLE) ??
+    (await prisma.productVariant.findFirstOrThrow({
+      where: { productId: catProduct.id, unitType: ProductUnitType.SINGLE },
+    }));
 
   await prisma.productLot.upsert({
     where: {
@@ -154,8 +190,12 @@ async function main() {
     },
   });
 
-  await prisma.productLot.create({
-    data: {
+  await prisma.productLot.upsert({
+    where: {
+      variantId_lotNumber: { variantId: singleVariant.id, lotNumber: "LOT-2025-088" },
+    },
+    update: {},
+    create: {
       variantId: singleVariant.id,
       lotNumber: "LOT-2025-088",
       expiryDate: new Date("2026-09-15"),
@@ -163,8 +203,10 @@ async function main() {
     },
   });
 
-  const bundleVariant = await prisma.productVariant.create({
-    data: {
+  const bundleVariant = await prisma.productVariant.upsert({
+    where: { sku: "PC-CAT-MIX-6" },
+    update: {},
+    create: {
       productId: catProduct.id,
       sku: "PC-CAT-MIX-6",
       name: "混搭 6 罐組合包",
@@ -174,30 +216,139 @@ async function main() {
     },
   });
 
-  await prisma.bundleItem.create({
-    data: {
+  await prisma.bundleItem.upsert({
+    where: {
+      bundleVariantId_componentVariantId: {
+        bundleVariantId: bundleVariant.id,
+        componentVariantId: singleVariant.id,
+      },
+    },
+    update: {},
+    create: {
       bundleVariantId: bundleVariant.id,
       componentVariantId: singleVariant.id,
       quantity: 6,
     },
   });
 
-  await prisma.pet.create({
-    data: {
-      userId: demoUser.id,
-      name: "Mochi",
-      species: PetSpecies.CAT,
-      breed: "英短",
-      weightKg: 4.2,
-      lifeStage: PetLifeStage.ADULT,
-      allergies: ["穀物"],
+  const dogVariant =
+    dogProduct.variants[0] ??
+    (await prisma.productVariant.findFirstOrThrow({
+      where: { productId: dogProduct.id },
+    }));
+
+  await prisma.productLot.upsert({
+    where: {
+      variantId_lotNumber: { variantId: dogVariant.id, lotNumber: "LOT-DOG-2026-02" },
+    },
+    update: {},
+    create: {
+      variantId: dogVariant.id,
+      lotNumber: "LOT-DOG-2026-02",
+      expiryDate: new Date("2026-11-01"),
+      quantity: 45,
     },
   });
+
+  const mochi =
+    (await prisma.pet.findFirst({
+      where: { userId: demoUser.id, name: "Mochi" },
+    })) ??
+    (await prisma.pet.create({
+      data: {
+        userId: demoUser.id,
+        name: "Mochi",
+        species: PetSpecies.CAT,
+        breed: "英短",
+        weightKg: 4.2,
+        lifeStage: PetLifeStage.ADULT_CAT,
+        allergies: ["穀物"],
+        birthDate: new Date(new Date().getFullYear() - 3, new Date().getMonth(), new Date().getDate() + 3),
+      },
+    }));
+
+  const puppy =
+    (await prisma.pet.findFirst({
+      where: { userId: demoUser.id, name: "Bagel" },
+    })) ??
+    (await prisma.pet.create({
+      data: {
+        userId: demoUser.id,
+        name: "Bagel",
+        species: PetSpecies.DOG,
+        breed: "哥基",
+        weightKg: 10,
+        lifeStage: PetLifeStage.PUPPY,
+        birthDate: new Date(new Date().getFullYear() - 2, 0, 15),
+      },
+    }));
+
+  const existingSub = await prisma.subscription.findFirst({
+    where: { userId: demoUser.id, variantId: singleVariant.id },
+  });
+  if (!existingSub) {
+    const nextDeliveryAt = new Date();
+    nextDeliveryAt.setDate(nextDeliveryAt.getDate() + 3);
+    await prisma.subscription.create({
+      data: {
+        userId: demoUser.id,
+        petId: mochi.id,
+        variantId: singleVariant.id,
+        quantity: 6,
+        intervalDays: 14,
+        nextDeliveryAt,
+      },
+    });
+  }
+
+  const existingOrder = await prisma.order.findFirst({
+    where: { userId: demoUser.id, orderNumber: "PM-SEED-RUNNING-LOW" },
+  });
+  if (!existingOrder) {
+    const orderedAt = new Date();
+    orderedAt.setDate(orderedAt.getDate() - 20);
+    await prisma.order.create({
+      data: {
+        orderNumber: "PM-SEED-RUNNING-LOW",
+        userId: demoUser.id,
+        status: "PAID",
+        subtotalHkd: 19800,
+        totalHkd: 19800,
+        shippingAddress: { source: "seed" },
+        createdAt: orderedAt,
+        items: {
+          create: {
+            variantId: dogVariant.id,
+            quantity: 1,
+            priceHkd: 19800,
+          },
+        },
+      },
+    });
+  }
+
+  const existingAddress = await prisma.address.findFirst({
+    where: { userId: demoUser.id, label: "家" },
+  });
+  if (!existingAddress) {
+    await prisma.address.create({
+      data: {
+        userId: demoUser.id,
+        label: "家",
+        recipient: "Demo 家長",
+        phone: "91234567",
+        district: "沙田",
+        address: "沙田正街 1 號 8 樓",
+        isDefault: true,
+      },
+    });
+  }
 
   console.log("✅ Seed complete");
   console.log("   Admin: admin@pawmart.hk / admin123");
   console.log("   Demo:  demo@pawmart.hk / demo1234");
   console.log(`   Products: ${catProduct.name}, ${dogProduct.name}`);
+  console.log(`   Pets: ${mochi.name}, ${puppy.name}`);
 }
 
 main()

@@ -1,41 +1,42 @@
 # PawMart — 香港寵物用品零售平台
 
-Next.js 全端 + PostgreSQL + Prisma 打造的寵物用品網店 MVP。
+Next.js 全端 + PostgreSQL + Prisma 打造的寵物用品網店。
 
 ## 功能概覽
 
-### MVP（Phase 1 — 目前）
-- 商品瀏覽與分類篩選
-- 購物車（訪客 session / 會員）
-- 會員註冊登入
-- 多寵物檔案管理
-- 基礎推薦引擎（品種、生命階段、過敏原避障）
-- 營養熱量估算
-- 後台商品 / 批號 / 組合包檢視
-- Stripe 金流介面預留（HKD）
+### 前台 — 個人化購物
+- 商品瀏覽、分類 / 品種 / 生命階段 / 過敏原智慧篩選
+- 購物車（訪客 session / 會員；可改數量與移除）與示範結帳（HKD）
+- 會員註冊登入、會員中心、送貨地址（香港 18 區）
+- 多寵物檔案（含生日、體重、過敏原；可編輯／刪除）
+- 推薦引擎：品種、生命階段、過敏原避障
+- 營養熱量估算（RER）
+- 訂閱制定期補貨（14 / 30 / 60 天）
 
-### Phase 2 — 供應鏈
-- 批號 FEFO 扣減
-- 到期 Alert 通知（Email / Dashboard）
-- 組合包 / 整箱自動拆包扣庫存
-- 進貨與調撥
+### 後台 — 供應鏈與營運
+- 商品／規格 CRUD；新增商品可「智能填入」（品牌官網 + OpenRouter / Gemini 補齊成份／營養）
+- 進貨入庫（批號 Lot Number + 有效期限）；整箱入庫自動拆入單件批號
+- 盤點（調整批號數量）與批號調撥
+- 結帳 FEFO 扣減（先到期先出），訂單可見批號
+- 到期 Alert（30 天內）與管理員預警電郵
+- 組合包 / 整箱自動拆包扣庫存（單罐、一箱 12 罐、混搭組合包）
+- 訂單出貨狀態：已付款 → 處理中／已出貨 → 已送達
 
-### Phase 3 — 訂閱 & CRM
-- Stripe Subscription 定期補貨
-- 「快吃完了」催購提醒
-- 生日 / 生命階段自動行銷
-- 分級寵物點數（Bronze → Platinum）
+### 會員 CRM
+- 「快吃完了」催購（依訂閱到期或上次主糧消耗）
+- 生日與生命階段行銷活動（Resend 電郵；未設定金鑰則模擬發送）
+- 分級寵物點數：青銅 → 白銀 → 黃金 → 白金（每消費 HK$1 = 1 點；結帳 100 點折抵 HK$1）
+- `/api/cron/crm` 可排程產生活動、發送待發電郵、到期預警，並處理到期訂閱
+- 推薦依每日熱量／包裝可食用天數排序；CRM 發送後 14 天內下單記為轉換
 
 ## 快速開始
 
 ```bash
-# 1. 複製環境變數
+# 1. 複製環境變數（npm run db:migrate 也會在缺少 .env 時自動複製）
 cp .env.example .env
 
-# 2. 啟動 PostgreSQL（擇一）
-npx prisma dev          # Prisma 內建本地 Postgres
-# 或 Docker:
-# docker run -d --name pawmart-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=pawmart -p 5432:5432 postgres:16
+# 2. 用 Docker 啟動 PostgreSQL
+npm run db:up
 
 # 3. 資料庫遷移 & 種子資料
 npm run db:migrate
@@ -53,6 +54,8 @@ npm run dev
 | 管理員 | admin@pawmart.hk | admin123 |
 | 會員 | demo@pawmart.hk | demo1234 |
 
+Demo 會員已有寵物 Mochi / Bagel、即將到期訂閱，以及一筆可觸發「快吃完了」的歷史訂單。
+
 ## 技術堆疊
 
 | 層級 | 技術 |
@@ -61,7 +64,7 @@ npm run dev
 | 語言 | TypeScript |
 | 資料庫 | PostgreSQL + Prisma 7 |
 | 認證 | Auth.js (NextAuth v5) |
-| 金流 | Stripe（香港 HKD） |
+| 金流 | Stripe（香港 HKD，選用）；未設定時使用示範結帳 |
 | UI | Tailwind CSS 4 |
 
 ## 專案結構
@@ -70,30 +73,20 @@ npm run dev
 src/
 ├── app/                  # 頁面 & API Routes
 │   ├── products/         # 商品列表 & 詳情
-│   ├── cart/             # 購物車
-│   ├── account/pets/     # 寵物檔案
-│   ├── admin/            # 後台
-│   └── api/              # REST API
+│   ├── cart/             # 購物車 / 結帳
+│   ├── account/          # 寵物、訂單、地址、訂閱、點數
+│   ├── admin/            # 後台（商品 CRUD、庫存入庫／盤點、CRM）
+│   └── api/              # REST API（含 /api/cron/crm）
 ├── components/           # UI 元件
 ├── lib/
-│   ├── prisma.ts         # DB client
-│   ├── auth.ts           # 認證設定
-│   ├── inventory.ts      # 庫存 / 批號 / 組合包邏輯
-│   └── recommendations.ts # 推薦 & 營養引擎
+│   ├── prisma.ts
+│   ├── auth.ts
+│   ├── inventory.ts      # FEFO / 批號 / 組合包
+│   ├── checkout.ts       # 下單、訂閱履約、點數
+│   ├── campaigns.ts      # CRM 催購與行銷活動
+│   └── recommendations.ts
 └── generated/prisma/     # Prisma Client
-prisma/
-├── schema.prisma         # 資料模型
-└── seed.ts               # 種子資料
 ```
-
-## 資料模型重點
-
-- **ProductVariant.unitType**: `SINGLE` | `CASE` | `BUNDLE`
-- **ProductLot**: 批號 + 有效期限 + 數量
-- **BundleItem**: 組合包 → 組成 SKU 對應
-- **Pet.allergies**: 字串陣列，推薦引擎自動排除
-- **Subscription**: Phase 3 訂閱制預留
-- **PointsAccount**: Phase 3 點數系統預留
 
 ## 香港金流設定
 
@@ -102,21 +95,43 @@ prisma/
 3. 設定 Webhook 指向 `/api/webhooks/stripe`
 4. 支援：Visa / Mastercard / Apple Pay / Google Pay
 
+未設定 Stripe 時，會員結帳會直接建立已付款訂單，並扣減批號庫存。結帳會帶入會員預設送貨地址。
+
+## 電郵設定（選用）
+
+設定 `RESEND_API_KEY`、`EMAIL_FROM`、`ADMIN_ALERT_EMAIL` 後，CRM 活動與到期預警會經 Resend 寄出。未設定金鑰時，系統會在伺服器 log 模擬發送，並仍將活動標記為已發送。
+
+## OpenRouter（商品智能填入）
+
+後台「搜尋並填入」會先讀品牌官網與 Wikipedia。缺漏的成份、保證分析與說明會經 [OpenRouter](https://openrouter.ai) 呼叫 Gemini（含網上搜尋）補齊，**不會**使用 Open Food Facts 或零售網店。請在 `.env` 設定 `OPENROUTER_API_KEY`（可向 [OpenRouter Keys](https://openrouter.ai/keys) 申請）。未設定時仍可搜尋官網，但無法自動補齊缺漏欄位。
+
 ## 開發指令
 
 ```bash
 npm run dev          # 開發伺服器
 npm run build        # 正式建置
-npm run db:migrate   # 執行 migration
-npm run db:seed      # 載入種子資料
-npm run db:studio    # Prisma Studio GUI
+npm run test         # 單元測試（FEFO / 點數 / CRM / 電郵 HTML）
+npm run db:up            # Docker Compose 啟動 Postgres
+npm run db:down          # 停止資料庫容器
+npm run db:migrate       # 套用既有 migration（deploy）
+npm run db:migrate:dev   # 開發時建立新 migration
+npm run db:seed          # 載入種子資料
+npm run db:studio        # Prisma Studio GUI
+```
+
+排程 CRM（可選）：
+
+```bash
+curl -X POST http://localhost:3000/api/cron/crm \
+  -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ## Roadmap
 
 ```
-Phase 1 (MVP)     ████████░░  商品、購物車、會員、寵物檔案、基礎推薦
-Phase 2           ░░░░░░░░░░  批號 FEFO、組合包扣減、進貨管理
-Phase 3           ░░░░░░░░░░  訂閱制、CRM 自動化、點數獎勵
-Phase 4           ░░░░░░░░░░  進階營養計算、AI 推薦、行動 App
+Phase 1 (MVP)     ██████████  商品、購物車、會員、寵物檔案、基礎推薦
+Phase 2           ██████████  批號 FEFO、整箱入庫拆件、盤點調撥、到期電郵
+Phase 3           ██████████  訂閱制、CRM 轉換追蹤、點數折抵、熱量推薦
+Phase 4           ░░░░░░░░░░  Stripe Checkout / Subscription
+Phase 5           ██████████  商品 CRUD、出貨、地址、購物車數量、電郵
 ```

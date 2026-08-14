@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PetForm } from "@/components/pets/pet-form";
+import { PetEditor } from "@/components/pets/pet-editor";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getRecommendationsForPet, estimateDailyKcal } from "@/lib/recommendations";
@@ -17,7 +17,7 @@ export default async function PetsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
+    <div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">我的寵物</h1>
@@ -50,7 +50,7 @@ export default async function PetsPage() {
                     key={pet.id}
                     className="rounded-2xl border border-amber-100 bg-white p-6"
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-xl font-bold">{pet.name}</h3>
                         <p className="text-sm text-zinc-500">
@@ -63,7 +63,7 @@ export default async function PetsPage() {
                         )}
                         {dailyKcal && (
                           <p className="mt-1 text-sm text-amber-700">
-                            估算每日熱量需求：约 {dailyKcal} kcal
+                            估算每日熱量需求：約 {dailyKcal} kcal
                           </p>
                         )}
                         {pet.allergies.length > 0 && (
@@ -72,13 +72,26 @@ export default async function PetsPage() {
                           </p>
                         )}
                       </div>
-                      <span className="text-4xl">🐾</span>
+                      <PetEditor
+                        pet={{
+                          id: pet.id,
+                          name: pet.name,
+                          species: pet.species,
+                          breed: pet.breed ?? "",
+                          weightKg: pet.weightKg,
+                          lifeStage: pet.lifeStage ?? "",
+                          allergies: pet.allergies,
+                          birthDate: pet.birthDate
+                            ? pet.birthDate.toISOString().slice(0, 10)
+                            : "",
+                        }}
+                      />
                     </div>
 
                     {recommendations.length > 0 && (
                       <div className="mt-6">
                         <h4 className="text-sm font-semibold text-zinc-700">
-                          為 {pet.name} 推薦
+                          為 {pet.name} 推薦（依熱量吻合排序）
                         </h4>
                         <div className="mt-3 grid gap-4 sm:grid-cols-2">
                           {recommendations.map((product) => {
@@ -92,6 +105,7 @@ export default async function PetsPage() {
                                 brand={product.brand}
                                 imageUrl={product.imageUrl}
                                 priceHkd={variant.priceHkd}
+                                caption={product.caption}
                               />
                             );
                           })}

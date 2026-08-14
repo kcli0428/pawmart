@@ -1,0 +1,7 @@
+ALTER TABLE "Order" ADD COLUMN "pointsRedeemed" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Order" ADD COLUMN "discountHkd" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "Campaign" ADD COLUMN "convertedAt" TIMESTAMP(3);
+ALTER TABLE "Campaign" ADD COLUMN "convertedOrderId" TEXT;
+
+ALTER TABLE "Campaign" ADD CONSTRAINT "Campaign_convertedOrderId_fkey" FOREIGN KEY ("convertedOrderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
