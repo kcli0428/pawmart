@@ -1,0 +1,118 @@
+import { notFound } from "next/navigation";
+import { AddToCartButton } from "@/components/products/add-to-cart-button";
+import { formatHkd } from "@/lib/utils";
+import { prisma } from "@/lib/prisma";
+import { PET_SPECIES_LABELS, LIFE_STAGE_LABELS } from "@/lib/constants";
+
+type Props = {
+  params: Promise<{ slug: string }>;
+};
+
+export default async function ProductDetailPage({ params }: Props) {
+  const { slug } = await params;
+
+  const product = await prisma.product.findUnique({
+    where: { slug },
+    include: {
+      category: true,
+      variants: { where: { isActive: true }, orderBy: { priceHkd: "asc" } },
+      allergens: { include: { allergen: true } },
+    },
+  });
+
+  if (!product) notFound();
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-10">
+      <div className="grid gap-10 lg:grid-cols-2">
+        <div className="flex aspect-square items-center justify-center rounded-2xl bg-amber-50 text-8xl">
+          {product.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="h-full w-full rounded-2xl object-cover"
+            />
+          ) : (
+            "🐾"
+          )}
+        </div>
+
+        <div>
+          {product.brand && (
+            <p className="text-sm font-medium uppercase tracking-wide text-amber-600">
+              {product.brand}
+            </p>
+          )}
+          <h1 className="mt-1 text-3xl font-bold">{product.name}</h1>
+          {product.category && (
+            <p className="mt-1 text-sm text-zinc-500">{product.category.name}</p>
+          )}
+
+          <p className="mt-4 text-zinc-600">{product.description}</p>
+
+          {product.suitableFor.length > 0 && (
+            <p className="mt-4 text-sm">
+              <span className="font-medium">適用品種：</span>
+              {product.suitableFor.map((s) => PET_SPECIES_LABELS[s]).join("、")}
+            </p>
+          )}
+          {product.lifeStages.length > 0 && (
+            <p className="mt-1 text-sm">
+              <span className="font-medium">適用階段：</span>
+              {product.lifeStages.map((s) => LIFE_STAGE_LABELS[s]).join("、")}
+            </p>
+          )}
+          {product.allergens.length > 0 && (
+            <p className="mt-1 text-sm text-red-600">
+              <span className="font-medium">過敏原：</span>
+              {product.allergens.map((a) => a.allergen.nameZh ?? a.allergen.name).join("、")}
+            </p>
+          )}
+
+          {(product.proteinPct || product.kcalPer100g) && (
+            <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm">
+              <p className="font-medium text-amber-800">營養資訊（每 100g）</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-zinc-600">
+                {product.proteinPct != null && <span>蛋白質 {product.proteinPct}%</span>}
+                {product.fatPct != null && <span>脂肪 {product.fatPct}%</span>}
+                {product.fiberPct != null && <span>纖維 {product.fiberPct}%</span>}
+                {product.kcalPer100g != null && <span>熱量 {product.kcalPer100g} kcal</span>}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-8 space-y-4">
+            <h2 className="font-semibold">規格選擇</h2>
+            {product.variants.map((variant) => (
+              <div
+                key={variant.id}
+                className="flex items-center justify-between rounded-xl border border-amber-100 bg-white p-4"
+              >
+                <div>
+                  <p className="font-medium">{variant.name}</p>
+                  <p className="text-xs text-zinc-500">SKU: {variant.sku}</p>
+                  <p className="mt-1 text-lg font-bold text-amber-700">
+                    {formatHkd(variant.priceHkd)}
+                    {variant.compareAtPrice && (
+                      <span className="ml-2 text-sm font-normal text-zinc-400 line-through">
+                        {formatHkd(variant.compareAtPrice)}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    庫存：{variant.stockQuantity > 0 ? `${variant.stockQuantity} 件` : "缺貨"}
+                  </p>
+                </div>
+                <AddToCartButton
+                  variantId={variant.id}
+                  disabled={variant.stockQuantity <= 0}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

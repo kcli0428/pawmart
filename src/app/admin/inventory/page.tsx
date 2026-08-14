@@ -1,0 +1,105 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { getExpiringLots } from "@/lib/inventory";
+
+export default async function AdminInventoryPage() {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "ADMIN") redirect("/");
+
+  const [lots, bundles] = await Promise.all([
+    prisma.productLot.findMany({
+      include: {
+        variant: { include: { product: true } },
+      },
+      orderBy: { expiryDate: "asc" },
+    }),
+    prisma.bundleItem.findMany({
+      include: {
+        bundleVariant: { include: { product: true } },
+        componentVariant: { include: { product: true } },
+      },
+    }),
+  ]);
+
+  const expiring = await getExpiringLots(30);
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-10">
+      <Link href="/admin" className="text-sm text-amber-700 hover:underline">
+        ← 返回後台
+      </Link>
+      <h1 className="mt-2 text-3xl font-bold">批號與庫存</h1>
+      <p className="mt-1 text-zinc-600">
+        批號追蹤、有效期限 Alert、組合包拆包扣減邏輯
+      </p>
+
+      {expiring.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+          <p className="font-medium text-orange-800">
+            ⚠️ {expiring.length} 個批號將於 30 天內到期
+          </p>
+        </div>
+      )}
+
+      <h2 className="mt-8 text-xl font-semibold">批號清單</h2>
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-amber-100 bg-white">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-amber-100 bg-amber-50/50">
+            <tr>
+              <th className="px-4 py-3">商品</th>
+              <th className="px-4 py-3">批號</th>
+              <th className="px-4 py-3">到期日</th>
+              <th className="px-4 py-3">數量</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lots.map((lot) => (
+              <tr key={lot.id} className="border-b border-amber-50">
+                <td className="px-4 py-3">
+                  {lot.variant.product.name} — {lot.variant.name}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs">{lot.lotNumber}</td>
+                <td className="px-4 py-3">{lot.expiryDate.toLocaleDateString("zh-HK")}</td>
+                <td className="px-4 py-3">{lot.quantity}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {lots.length === 0 && (
+          <p className="p-8 text-center text-zinc-500">尚無批號資料</p>
+        )}
+      </div>
+
+      <h2 className="mt-8 text-xl font-semibold">組合包設定</h2>
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-amber-100 bg-white">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-amber-100 bg-amber-50/50">
+            <tr>
+              <th className="px-4 py-3">組合包</th>
+              <th className="px-4 py-3">組成 SKU</th>
+              <th className="px-4 py-3">數量</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bundles.map((b) => (
+              <tr key={b.id} className="border-b border-amber-50">
+                <td className="px-4 py-3">
+                  {b.bundleVariant.product.name} — {b.bundleVariant.name}
+                </td>
+                <td className="px-4 py-3">
+                  {b.componentVariant.product.name} — {b.componentVariant.name}
+                </td>
+                <td className="px-4 py-3">× {b.quantity}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {bundles.length === 0 && (
+          <p className="p-8 text-center text-zinc-500">尚無組合包設定</p>
+        )}
+      </div>
+    </div>
+  );
+}
