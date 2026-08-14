@@ -173,12 +173,76 @@ export function htmlToPlainText(html: string) {
     .trim();
 }
 
+export function isCatalogNoise(text: string): boolean {
+  const value = text.trim();
+  if (!value) return true;
+  if ((value.match(/\|/g) ?? []).length >= 3) return true;
+  if (/全部配方|系列全部|慕絲貓罐系列全部/.test(value)) return true;
+  if ((value.match(/配方/g) ?? []).length >= 4) return true;
+  if ((value.match(/\bseries\b/gi) ?? []).length >= 4) return true;
+  if (/analytical constituents|top of page|bottom of page/i.test(value) && value.length > 180) {
+    return true;
+  }
+  return false;
+}
+
 export function extractIngredients(text: string): string | undefined {
   const match =
-    text.match(/主要成[份分][：:]\s*([\s\S]{8,800}?)(?:營養分析|保證分析|粗蛋白質|卡路里|$)/i) ||
-    text.match(/ingredients?[：:]\s*([\s\S]{8,800}?)(?:guaranteed analysis|crude protein|$)/i);
+    text.match(
+      /主要成[份分][：:]\s*([\s\S]{0,500}?)(?:營養分析|保證分析|粗蛋白質|analytical constituents|protein\s*\(min\)|卡路里|$)/i,
+    ) ||
+    text.match(
+      /(?:main\s+)?ingredients?[：:]\s*([\s\S]{0,500}?)(?:guaranteed analysis|analytical constituents|protein\s*\(min\)|crude protein|$)/i,
+    );
   const value = match?.[1]?.replace(/\s+/g, " ").trim().replace(/[。.;；]+$/, "");
-  return value || undefined;
+  if (!value || isCatalogNoise(value) || /^(analytical constituents|guaranteed analysis)$/i.test(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+export function refineIngredients(raw: string | undefined, query: string): string {
+  const value = raw?.trim() ?? "";
+  if (!value) {
+    if (/鯖魚/.test(query)) return "鯖魚";
+    return "";
+  }
+  if (/^mackerel$/i.test(value) && /鯖魚/.test(query)) return "鯖魚（Mackerel）";
+  return value;
+}
+
+export function extractIngredientAlts(html: string): string | undefined {
+  const section = html.match(
+    /(?:main\s+ingredients|主要成[份分])[\s\S]{0,4000}?(?:analytical constituents|營養分析|保證分析)/i,
+  );
+  if (!section) return undefined;
+  const labels = [...section[0].matchAll(/alt=["']([^"']+)["']/gi)]
+    .map((match) =>
+      match[1]
+        .replace(/\.(png|jpe?g|webp|gif|svg)$/i, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((label) => label && !/instagram|facebook|logo/i.test(label));
+  if (labels.length === 0) return undefined;
+  return [...new Set(labels)].join("、");
+}
+
+export function extractProductHighlights(text: string): string | undefined {
+  const start = text.search(/all ages formula|產品特點|產品介紹|適合所有/i);
+  const end = text.search(
+    /main ingredients|analytical constituents|主要成[份分]|營養分析|保證分析/i,
+  );
+  if (start < 0) return undefined;
+  const slice = text.slice(start, end > start ? end : start + 700).trim();
+  const lines = slice
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line && !/top of page|bottom of page|home|products/i.test(line));
+  const value = lines.join("\n");
+  if (value.length < 20 || isCatalogNoise(value)) return undefined;
+  return value.slice(0, 600);
 }
 
 export function extractNutrition(text: string): NutritionFacts {
@@ -200,18 +264,31 @@ export function extractNutrition(text: string): NutritionFacts {
     return undefined;
   };
 
-  const proteinPct = numberAfter(["粗蛋白質", "crude protein", "蛋白質"]);
-  const fatPct = numberAfter(["粗脂肪", "crude fat", "脂肪"]);
-  const fiberPct = numberAfter(["粗纖維", "crude fiber", "crude fibre", "纖維"]);
-  const moisturePct = numberAfter(["水份", "水分", "moisture"]);
-  const ashPct = numberAfter(["灰質", "ash"]);
+  const proteinPct = numberAfter([
+    "粗蛋白質",
+    "crude protein",
+    "protein\\s*\\(min\\)",
+    "蛋白質",
+    "\\bprotein\\b",
+  ]);
+  const fatPct = numberAfter(["粗脂肪", "crude fat", "fat\\s*\\(min\\)", "脂肪"]);
+  const fiberPct = numberAfter([
+    "粗纖維",
+    "crude fiber",
+    "crude fibre",
+    "fiber\\s*\\(max\\)",
+    "纖維",
+  ]);
+  const moisturePct = numberAfter(["水份", "水分", "moistures?", "moisture"]);
+  const ashPct = numberAfter(["灰質", "ash\\s*\\(max\\)", "\\bash\\b"]);
   const taurinePct = numberAfter(["牛磺酸", "taurine"]);
   const chondroitinMgPerKg = mgPerKgAfter(["硫酸軟骨素", "chondroitin"]);
   const glucosamineMgPerKg = mgPerKgAfter(["葡萄糖胺", "glucosamine"]);
 
-  const kcal100 = text.match(
-    /(?:kcal(?:\/|每)?\s*100\s*g|熱量(?:\/|每)?\s*100\s*g)[^\d]{0,12}([\d,.]+)/i,
-  );
+  const kcal100 =
+    text.match(/([\d,.]+)\s*k?cal(?:ories)?\s*(?:\/|per|每)\s*100\s*g/i) ||
+    text.match(/(?:kcal(?:\/|每)?\s*100\s*g|熱量(?:\/|每)?\s*100\s*g)[^\d]{0,12}([\d,.]+)/i) ||
+    text.match(/calories?\s*[：:=]\s*([\d,.]+)/i);
   const kcalKg =
     text.match(/(?:卡路里(?:含量)?|熱量|ME)\s*[=:]?\s*([\d,]+)\s*千卡\s*\/\s*公斤/i) ||
     text.match(/([\d,]+)\s*kcal\s*\/\s*kg/i);
@@ -290,7 +367,14 @@ export function inferLifeStages(text: string): string[] {
   if (/成犬|成貓|adult/.test(value)) found.push("ADULT");
   if (/老年|senior|ageing|aging/.test(value)) found.push("SENIOR");
   if (/全齡|all.?life.?stages|all.?ages/.test(value)) {
-    for (const stage of ["PUPPY", "KITTEN", "ADULT", "SENIOR"]) {
+    const species = inferSpecies(value);
+    const stages =
+      species.includes("CAT") && !species.includes("DOG")
+        ? ["KITTEN", "ADULT", "SENIOR"]
+        : species.includes("DOG") && !species.includes("CAT")
+          ? ["PUPPY", "ADULT", "SENIOR"]
+          : ["PUPPY", "KITTEN", "ADULT", "SENIOR"];
+    for (const stage of stages) {
       if (!found.includes(stage)) found.push(stage);
     }
   }
@@ -319,15 +403,21 @@ export function inferCategoryId(
 ): string | undefined {
   const q = query.toLowerCase();
   const extra = extraText.toLowerCase();
-  const queryWantsCat = /貓糧|貓用|幼貓|成貓|feline|cat\s*food|\bcats?\b/.test(q);
-  const queryWantsDog = /狗糧|犬用|幼犬|成犬|canine|dog\s*food|\bdogs?\b/.test(q);
+  const queryWantsCat = /貓|feline|cat\s*food|\bcats?\b/.test(q);
+  const queryWantsDog = /狗|犬|canine|dog\s*food|\bdogs?\b/.test(q);
+  const queryWantsWet =
+    /濕糧|慕絲|肉泥|罐頭|主食罐|副食罐|湯包|mousse|p[aâ]t[eé]|wet|canned|pouch/.test(q);
+  const queryWantsDry = /乾糧|風乾|kibble|air[\s-]?dried|\bdry\b/.test(q);
 
   const scored = categories
     .map((category) => {
       const name = category.name.toLowerCase();
       const slug = (category.slug ?? "").toLowerCase();
-      const isCat = /貓|cat/.test(`${name} ${slug}`);
-      const isDog = /狗|犬|dog/.test(`${name} ${slug}`);
+      const hay = `${name} ${slug}`;
+      const isCat = /貓|cat/.test(hay);
+      const isDog = /狗|犬|dog/.test(hay);
+      const isWet = /濕|wet|mousse|罐/.test(hay);
+      const isDry = /乾|dry|kibble|air/.test(hay);
       let score = 0;
       if (q.includes(name) && name.length >= 2) score += 30;
       if (slug && q.includes(slug.replace(/-/g, " "))) score += 8;
@@ -337,6 +427,10 @@ export function inferCategoryId(
       if (isDog && queryWantsDog && !queryWantsCat) score += 12;
       if (isCat && queryWantsDog && !queryWantsCat) score -= 25;
       if (isDog && queryWantsCat && !queryWantsDog) score -= 25;
+      if (isWet && queryWantsWet) score += 18;
+      if (isDry && queryWantsDry) score += 18;
+      if (isWet && queryWantsDry && !queryWantsWet) score -= 25;
+      if (isDry && queryWantsWet && !queryWantsDry) score -= 25;
       if (extra.includes(name) && name.length >= 2) score += 2;
       return { id: category.id, score };
     })
@@ -346,6 +440,7 @@ export function inferCategoryId(
 }
 
 export const KNOWN_BRANDS = [
+  "Astkatta",
   "Ziwi Peak",
   "Royal Canin",
   "Hill's",
@@ -396,8 +491,9 @@ const URL_QUERY_HINTS: Array<{ test: RegExp; tokens: string[]; weight?: number }
   { test: /貓糧|貓用|幼貓|成貓|feline|cat\s*food|\bcats?\b/i, tokens: ["catfood", "cat-food"] },
   { test: /狗糧|犬用|幼犬|成犬|canine|dog\s*food|\bdogs?\b/i, tokens: ["dogfood", "dog-food"] },
   { test: /風乾|air[\s-]?dried/i, tokens: ["airdried", "air-dried"] },
-  { test: /罐頭|wet|canned/i, tokens: ["canned", "wet"] },
-  { test: /鯖魚|mackerel/i, tokens: ["mackerel", "marckerel", "markerel"] },
+  { test: /慕絲|mousse|肉泥|p[aâ]t[eé]/i, tokens: ["mousse", "pate"] },
+  { test: /濕糧|罐頭|主食罐|副食罐|湯包|wet|canned|pouch/i, tokens: ["canned", "wet", "pouch"] },
+  { test: /鯖魚|mackerel|saba/i, tokens: ["mackerel", "marckerel", "markerel", "saba"] },
   { test: /羊肉|lamb/i, tokens: ["lamb"] },
   { test: /雞肉|chicken/i, tokens: ["chicken"] },
   { test: /牛肉|beef/i, tokens: ["beef"] },
@@ -430,6 +526,7 @@ export function scoreProductUrl(url: string, query: string): number {
     score -= 24;
   }
   if (path === "/" || path === "") score -= 8;
+  if (/\/(products|shop|series|about|faq|contact|members)(\/|$)/i.test(path)) score -= 16;
   return score;
 }
 

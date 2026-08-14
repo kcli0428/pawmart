@@ -2,11 +2,12 @@ import Link from "next/link";
 import { ProductForm } from "@/components/admin/product-form";
 import { requireAdmin } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { sortCategories } from "@/lib/constants";
 
 export default async function NewProductPage() {
   await requireAdmin();
   const [categories, allergens] = await Promise.all([
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.category.findMany(),
     prisma.allergen.findMany({ orderBy: { name: "asc" } }),
   ]);
 
@@ -20,7 +21,7 @@ export default async function NewProductPage() {
         輸入名稱後按「搜尋並填入」，可從品牌官網帶出分類、成份、保證分析與規格。
       </p>
       <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6">
-        <ProductForm categories={categories} allergens={allergens} />
+        <ProductForm categories={sortCategories(categories)} allergens={allergens} />
       </div>
     </div>
   );

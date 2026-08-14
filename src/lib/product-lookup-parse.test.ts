@@ -3,19 +3,23 @@ import { describe, it } from "node:test";
 import {
   extractDuckDuckGoResults,
   extractHkdPrice,
+  extractIngredientAlts,
   extractIngredients,
   extractJsonLdProduct,
   extractNutrition,
   extractPackSizes,
+  extractProductHighlights,
   extractSitemapLocs,
   extractWeightLabel,
   htmlToPlainText,
   inferCategoryId,
   inferLifeStages,
   inferSpecies,
+  isCatalogNoise,
   isGenericBrandCopy,
   preferOfficialHits,
   rankUrlsForQuery,
+  refineIngredients,
   unwrapDuckDuckGoUrl,
 } from "./product-lookup-parse";
 
@@ -95,16 +99,25 @@ describe("nutrition and inference", () => {
     assert.match(extractIngredients(text) ?? "", /鯖魚，羊肉/);
   });
 
-  it("prefers 貓糧 when the query is cat food even if extra copy mentions dogs", () => {
-    const id = inferCategoryId(
-      "Ziwi Peak 風乾貓糧 鯖魚及羊肉配方",
-      "ZIWI PEAK 100% 紐西蘭製造 優質 風乾生肉 貓糧 狗糧 Air-Dried Dog and Cat Food",
-      [
-        { id: "dog", name: "狗糧", slug: "dog-food" },
-        { id: "cat", name: "貓糧", slug: "cat-food" },
-      ],
+  it("prefers 貓乾糧 for air-dried cat food and 貓濕糧 for mousse cans", () => {
+    const categories = [
+      { id: "dog-dry", name: "狗乾糧", slug: "dog-dry-food" },
+      { id: "dog-wet", name: "狗濕糧", slug: "dog-wet-food" },
+      { id: "cat-dry", name: "貓乾糧", slug: "cat-dry-food" },
+      { id: "cat-wet", name: "貓濕糧", slug: "cat-wet-food" },
+    ];
+    assert.equal(
+      inferCategoryId(
+        "Ziwi Peak 風乾貓糧 鯖魚及羊肉配方",
+        "ZIWI PEAK 100% 紐西蘭製造 優質 風乾生肉 貓糧 狗糧 Air-Dried Dog and Cat Food",
+        categories,
+      ),
+      "cat-dry",
     );
-    assert.equal(id, "cat");
+    assert.equal(
+      inferCategoryId("Astkatta 冰島 鯖魚貓主食慕絲罐", "", categories),
+      "cat-wet",
+    );
   });
 
   it("infers cat kitten and HKD price", () => {
@@ -113,6 +126,55 @@ describe("nutrition and inference", () => {
     assert.equal(extractHkdPrice("售價 HK$288.00"), "288.00");
     assert.equal(extractWeightLabel("400g ｜ 1kg"), "400g");
     assert.deepEqual(extractPackSizes("400g ｜ 1kg"), ["400g", "1kg"]);
+  });
+
+  it("parses Astkatta English guaranteed analysis and ignores series dump copy", () => {
+    const text = `
+      Mackerel Mousse 80g
+      All Ages Formula:
+      Suitable for all ages cats
+      Smooth & Easy to digest
+      Main Ingredients:
+      Analytical constituents:
+      Protein (min): 6.5
+      Crude Fat (min): 1.5
+      Crude Fiber (max): 1
+      Ash (max): 2.5
+      Moistures (max): 88.2
+      Calories: 54.2 Kcal/100g
+    `;
+    const n = extractNutrition(text);
+    assert.equal(n.proteinPct, 6.5);
+    assert.equal(n.fatPct, 1.5);
+    assert.equal(n.fiberPct, 1);
+    assert.equal(n.ashPct, 2.5);
+    assert.equal(n.moisturePct, 88.2);
+    assert.equal(n.kcalPer100g, 54.2);
+    assert.equal(extractIngredients(text), undefined);
+    assert.match(extractProductHighlights(text) ?? "", /All Ages Formula/);
+    assert.equal(
+      isCatalogNoise(
+        "慕絲貓罐系列全部配方吞拿魚 | 純鱷魚肉 | 火雞肉雞肉 | 鯖魚鱈魚吞拿魚 | 山羊奶雞肉",
+      ),
+      true,
+    );
+    const html =
+      'Main Ingredients:<img alt="mackerel.png" />Analytical constituents: Protein (min): 6.5';
+    assert.match(extractIngredientAlts(html) ?? "", /mackerel/i);
+    assert.equal(refineIngredients("mackerel", "Astkatta 冰島 鯖魚貓主食慕絲罐"), "鯖魚（Mackerel）");
+  });
+
+  it("ranks mackerel mousse above other Astkatta recipes", () => {
+    const ranked = rankUrlsForQuery(
+      [
+        "https://www.astkatta.com/crocodile-mousse-80g",
+        "https://www.astkatta.com/pure-saba-80g",
+        "https://www.astkatta.com/mackerel-mousse-80g",
+        "https://www.astkatta.com/products",
+      ],
+      "Astkatta 冰島 鯖魚貓主食慕絲罐",
+    );
+    assert.equal(ranked[0], "https://www.astkatta.com/mackerel-mousse-80g");
   });
 
   it("parses Wix-style official HTML into ingredients and analysis", () => {

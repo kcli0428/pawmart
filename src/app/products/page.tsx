@@ -1,7 +1,7 @@
 import { ProductCard } from "@/components/products/product-card";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { LIFE_STAGE_LABELS, PET_SPECIES_LABELS } from "@/lib/constants";
+import { LIFE_STAGE_LABELS, PET_SPECIES_LABELS, sortCategories } from "@/lib/constants";
 import type { PetLifeStage, PetSpecies, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 
@@ -20,8 +20,8 @@ export default async function ProductsPage({ searchParams }: Props) {
   const { category, q, species, lifeStage, allergen, petId } = await searchParams;
   const session = await auth();
 
-  const [categories, allergens, pets] = await Promise.all([
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+  const [rawCategories, allergens, pets] = await Promise.all([
+    prisma.category.findMany(),
     prisma.allergen.findMany({ orderBy: { nameZh: "asc" } }),
     session?.user
       ? prisma.pet.findMany({
@@ -30,6 +30,7 @@ export default async function ProductsPage({ searchParams }: Props) {
         })
       : Promise.resolve([]),
   ]);
+  const categories = sortCategories(rawCategories);
 
   const selectedPet = petId ? pets.find((pet) => pet.id === petId) : undefined;
   const speciesFilter = (selectedPet?.species ?? species) as PetSpecies | undefined;

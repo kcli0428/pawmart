@@ -40,16 +40,40 @@ async function main() {
     },
   });
 
-  const catFood = await prisma.category.upsert({
-    where: { slug: "cat-food" },
-    update: {},
-    create: { name: "貓糧", slug: "cat-food", description: "乾糧、濕糧、副食罐" },
+  await prisma.category.upsert({
+    where: { slug: "cat-dry-food" },
+    update: { name: "貓乾糧" },
+    create: { name: "貓乾糧", slug: "cat-dry-food", description: "貓用乾糧、風乾糧" },
   });
 
-  const dogFood = await prisma.category.upsert({
-    where: { slug: "dog-food" },
-    update: {},
-    create: { name: "狗糧", slug: "dog-food", description: "各階段犬隻主糧" },
+  const catWet = await prisma.category.upsert({
+    where: { slug: "cat-wet-food" },
+    update: { name: "貓濕糧" },
+    create: { name: "貓濕糧", slug: "cat-wet-food", description: "貓用罐頭、慕絲、湯包" },
+  });
+
+  const dogDry = await prisma.category.upsert({
+    where: { slug: "dog-dry-food" },
+    update: { name: "狗乾糧" },
+    create: { name: "狗乾糧", slug: "dog-dry-food", description: "狗用乾糧、風乾糧" },
+  });
+
+  await prisma.category.upsert({
+    where: { slug: "dog-wet-food" },
+    update: { name: "狗濕糧" },
+    create: { name: "狗濕糧", slug: "dog-wet-food", description: "狗用罐頭、濕糧" },
+  });
+
+  await prisma.product.updateMany({
+    where: { slug: "premium-cat-pate-400g" },
+    data: { categoryId: catWet.id },
+  });
+  await prisma.product.updateMany({
+    where: { slug: "salmon-dog-kibble-2kg" },
+    data: { categoryId: dogDry.id },
+  });
+  await prisma.category.deleteMany({
+    where: { slug: { in: ["cat-food", "dog-food"] } },
   });
 
   const chicken = await prisma.allergen.upsert({
@@ -72,7 +96,7 @@ async function main() {
       slug: "premium-cat-pate-400g",
       brand: "PawChoice",
       description: "全齡貓適用的高蛋白肉泥罐，無穀配方。",
-      categoryId: catFood.id,
+      categoryId: catWet.id,
       proteinPct: 11,
       fatPct: 5,
       fiberPct: 1,
@@ -116,7 +140,7 @@ async function main() {
       slug: "salmon-dog-kibble-2kg",
       brand: "OceanPaws",
       description: "富含 Omega-3，適合成犬日常主糧。",
-      categoryId: dogFood.id,
+      categoryId: dogDry.id,
       proteinPct: 26,
       fatPct: 14,
       fiberPct: 4,

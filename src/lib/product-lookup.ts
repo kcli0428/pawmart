@@ -2,11 +2,13 @@ import { slugify } from "@/lib/utils";
 import {
   extractDuckDuckGoResults,
   extractHkdPrice,
+  extractIngredientAlts,
   extractIngredients,
   extractJsonLdProduct,
   extractNutrition,
   extractOpenGraph,
   extractPackSizes,
+  extractProductHighlights,
   extractSitemapLocs,
   extractUrlsFromQuery,
   extractWeightLabel,
@@ -16,9 +18,11 @@ import {
   inferCategoryId,
   inferLifeStages,
   inferSpecies,
+  isCatalogNoise,
   isGenericBrandCopy,
   preferOfficialHits,
   rankUrlsForQuery,
+  refineIngredients,
   scoreProductUrl,
   slugFromProductUrl,
   suggestedSku,
@@ -68,6 +72,7 @@ async function fetchJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
 }
 
 const BRAND_SITES: Array<{ match: RegExp; host: string }> = [
+  { match: /astkatta/i, host: "www.astkatta.com" },
   { match: /ziwi/i, host: "www.ziwipetshk.com" },
   { match: /royal\s*canin|皇家/i, host: "www.royalcanin.com" },
   { match: /hill'?s|希爾斯/i, host: "www.hillspet.com" },
@@ -89,15 +94,15 @@ async function discoverOfficialProductUrls(query: string): Promise<string[]> {
   if (!known) return [];
   const origin = `https://${known.host}`;
   const indexXml = await fetchText(`${origin}/sitemap.xml`, 8000);
-  if (!indexXml) return [];
 
-  const locs = extractSitemapLocs(indexXml);
+  const locs = extractSitemapLocs(indexXml ?? "");
   const pageUrls = locs.filter((url) => !/\.xml(\?|$)/i.test(url));
   const sitemapUrls = locs.filter((url) => /\.xml(\?|$)/i.test(url));
-  const preferred = sitemapUrls.filter((url) => /pages-sitemap/i.test(url));
-  const others = sitemapUrls.filter((url) => !/pages-sitemap/i.test(url)).slice(0, 2);
+  const preferred = sitemapUrls.filter((url) => /pages-sitemap|product/i.test(url));
+  const fallback = [`${origin}/pages-sitemap.xml`, `${origin}/store-products-sitemap.xml`];
+  const others = sitemapUrls.filter((url) => !preferred.includes(url)).slice(0, 2);
   const childXmls = await Promise.all(
-    [...preferred, ...others].map((url) => fetchText(url, 8000)),
+    [...new Set([...preferred, ...fallback, ...others])].map((url) => fetchText(url, 8000)),
   );
   for (const xml of childXmls) {
     if (!xml) continue;
@@ -209,7 +214,8 @@ async function scrapeProductPage(url: string) {
   const jsonLd = extractJsonLdProduct(html);
   const og = extractOpenGraph(html);
   const nutrition = extractNutrition(text);
-  const ingredients = extractIngredients(text);
+  const ingredients =
+    extractIngredients(text) || extractIngredientAlts(html);
   return {
     name: jsonLd.name || og.name,
     brand: jsonLd.brand,
@@ -217,6 +223,7 @@ async function scrapeProductPage(url: string) {
     imageUrl: jsonLd.imageUrl || og.imageUrl,
     priceHkdDollars: jsonLd.priceHkdDollars || extractHkdPrice(text),
     ingredients,
+    highlights: extractProductHighlights(text),
     nutrition,
     packSizes: extractPackSizes(`${og.name ?? ""} ${text.slice(0, 4000)}`),
     text,
@@ -235,22 +242,32 @@ function mergeNutrition(...parts: Array<NutritionFacts | undefined>): NutritionF
   return merged;
 }
 
+function usableCopy(text: string | undefined, query: string): string | undefined {
+  if (!text) return undefined;
+  const value = text.replace(/\s*\|\s*www\.[^\s|]+/gi, "").trim();
+  if (!value || isCatalogNoise(value) || isGenericBrandCopy(value, query)) return undefined;
+  if (/^https?:\/\//i.test(value)) return undefined;
+  return value;
+}
+
 function productDescription(input: {
   query: string;
   ingredients?: string;
+  highlights?: string;
   pageDescription?: string;
   wiki?: string;
 }) {
-  const page =
-    input.pageDescription && !isGenericBrandCopy(input.pageDescription, input.query)
-      ? input.pageDescription
+  const ingredients =
+    input.ingredients && !isCatalogNoise(input.ingredients)
+      ? `主要成份：${input.ingredients}`
       : undefined;
   const blocks = [
-    page,
-    input.ingredients ? `主要成份：${input.ingredients}` : undefined,
+    usableCopy(input.highlights, input.query),
+    usableCopy(input.pageDescription, input.query),
+    ingredients,
   ].filter(Boolean);
-  if (blocks.length > 0) return blocks.join("\n\n");
-  return input.wiki ?? "";
+  if (blocks.length > 0) return [...new Set(blocks)].join("\n\n");
+  return usableCopy(input.wiki, input.query) ?? "";
 }
 
 function firstText(...values: Array<string | undefined>) {
@@ -314,18 +331,20 @@ export async function lookupProduct(
   const parsedFromOfficial = officialPage?.text
     ? extractNutrition(officialPage.text)
     : undefined;
-  const nutrition = mergeNutrition(
-    parsedFromOfficial,
-    pageNutrition,
-    extractNutrition(officialPage?.text ?? ""),
-    extractNutrition(combinedText),
-    {
-      proteinPct: off?.proteinPct,
-      fatPct: off?.fatPct,
-      fiberPct: off?.fiberPct,
-      kcalPer100g: off?.kcalPer100g,
-    },
-  );
+  const officialHasNutrition = nutritionFieldCount(officialPage?.nutrition ?? {}) >= 3;
+  const nutrition = officialHasNutrition
+    ? mergeNutrition(parsedFromOfficial, pageNutrition)
+    : mergeNutrition(
+        parsedFromOfficial,
+        pageNutrition,
+        extractNutrition(combinedText),
+        {
+          proteinPct: off?.proteinPct,
+          fatPct: off?.fatPct,
+          fiberPct: off?.fiberPct,
+          kcalPer100g: off?.kcalPer100g,
+        },
+      );
 
   const name = query;
 
@@ -336,22 +355,19 @@ export async function lookupProduct(
     inferBrand(query),
     inferBrand(combinedText),
   );
-  const ingredients =
-    officialPage?.ingredients ||
-    scraped.find((page) => page.ingredients)?.ingredients ||
-    extractIngredients(combinedText) ||
-    "";
+  const ingredients = refineIngredients(
+    [
+      officialPage?.ingredients,
+      scraped.find((page) => page.ingredients && !isCatalogNoise(page.ingredients))?.ingredients,
+      extractIngredients(combinedText),
+    ].find((value) => value && !isCatalogNoise(value)),
+    query,
+  );
   const description = productDescription({
     query,
     ingredients,
-    pageDescription: firstText(
-      officialPage?.description && !isGenericBrandCopy(officialPage.description, query)
-        ? officialPage.description
-        : undefined,
-      officialPage?.name && /配方|貓糧|狗糧|cat|dog/i.test(officialPage.name)
-        ? officialPage.name
-        : undefined,
-    ),
+    highlights: officialPage?.highlights,
+    pageDescription: officialPage?.description,
     wiki: wiki?.description,
   });
   const imageUrl = firstText(
@@ -373,7 +389,9 @@ export async function lookupProduct(
   const querySpecies = inferSpecies(query);
   const queryStages = inferLifeStages(query);
   const species = querySpecies.length ? querySpecies : inferSpecies(combinedText);
-  const lifeStages = queryStages;
+  const lifeStages = queryStages.length
+    ? queryStages
+    : inferLifeStages(`${query}\n${officialPage?.highlights ?? ""}`);
 
   const sources: { title: string; url: string }[] = [];
   if (officialPage) {

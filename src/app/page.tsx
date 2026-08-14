@@ -3,6 +3,7 @@ import { ArrowRight, Heart, Shield, Sparkles, Truck } from "lucide-react";
 import { ProductCard } from "@/components/products/product-card";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/prisma";
+import { sortCategories } from "@/lib/constants";
 
 export default async function HomePage() {
   const featuredProducts = await prisma.product.findMany({
@@ -18,10 +19,11 @@ export default async function HomePage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const categories = await prisma.category.findMany({
-    where: { parentId: null },
-    take: 6,
-  });
+  const categories = sortCategories(
+    await prisma.category.findMany({
+      where: { parentId: null },
+    }),
+  );
 
   return (
     <div>

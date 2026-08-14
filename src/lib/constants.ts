@@ -1,6 +1,25 @@
 export const SITE_NAME = "PawMart";
 export const SITE_DESCRIPTION = "香港寵物用品零售平台 — 為你的毛孩提供個人化購物體驗";
 
+export const FOOD_CATEGORY_SLUG_ORDER = [
+  "cat-dry-food",
+  "cat-wet-food",
+  "dog-dry-food",
+  "dog-wet-food",
+] as const;
+
+export function sortCategories<T extends { slug: string }>(categories: T[]): T[] {
+  return [...categories].sort((a, b) => {
+    const ia = FOOD_CATEGORY_SLUG_ORDER.indexOf(
+      a.slug as (typeof FOOD_CATEGORY_SLUG_ORDER)[number],
+    );
+    const ib = FOOD_CATEGORY_SLUG_ORDER.indexOf(
+      b.slug as (typeof FOOD_CATEGORY_SLUG_ORDER)[number],
+    );
+    return (ia === -1 ? 100 : ia) - (ib === -1 ? 100 : ib);
+  });
+}
+
 export const PET_SPECIES_LABELS: Record<string, string> = {
   DOG: "狗",
   CAT: "貓",

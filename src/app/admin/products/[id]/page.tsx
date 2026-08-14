@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { deactivateProductAction } from "@/app/admin/product-actions";
 import { requireAdmin } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { sortCategories } from "@/lib/constants";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -20,7 +21,7 @@ export default async function EditProductPage({ params }: Props) {
         allergens: true,
       },
     }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.category.findMany(),
     prisma.allergen.findMany({ orderBy: { name: "asc" } }),
   ]);
 
@@ -44,7 +45,7 @@ export default async function EditProductPage({ params }: Props) {
       </div>
       <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6">
         <ProductForm
-          categories={categories}
+          categories={sortCategories(categories)}
           allergens={allergens}
           product={{
             id: product.id,
