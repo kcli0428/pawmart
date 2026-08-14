@@ -9,9 +9,21 @@ import { LIFE_STAGE_LABELS } from "@/lib/constants";
 import { campaignEmailHtml, sendEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { estimateDailyKcal } from "@/lib/recommendations";
+import {
+  CAMPAIGN_CONVERSION_DAYS,
+  campaignWouldConvert,
+} from "@/lib/campaign-conversion";
 
 const REORDER_THRESHOLD_DAYS = 7;
 const BIRTHDAY_WINDOW_DAYS = 14;
+
+function shopProductsUrl() {
+  const base = (process.env.AUTH_URL || process.env.NEXTAUTH_URL || "https://pawmart.hk").replace(
+    /\/$/,
+    "",
+  );
+  return `${base}/products`;
+}
 
 export type RunningLowAlert = {
   pet: Pet;
@@ -212,7 +224,7 @@ export async function sendCampaign(id: string) {
   const result = await sendEmail({
     to: campaign.user.email,
     subject: campaign.title,
-    html: campaignEmailHtml(campaign.title, campaign.body),
+    html: campaignEmailHtml(campaign.title, campaign.body, shopProductsUrl()),
   });
 
   await markCampaignSent(id);
@@ -229,12 +241,13 @@ export async function sendPendingCampaigns(limit = 50) {
 
   let sent = 0;
   let simulated = 0;
+  const shopUrl = shopProductsUrl();
 
   for (const campaign of pending) {
     const result = await sendEmail({
       to: campaign.user.email,
       subject: campaign.title,
-      html: campaignEmailHtml(campaign.title, campaign.body),
+      html: campaignEmailHtml(campaign.title, campaign.body, shopUrl),
     });
     await markCampaignSent(campaign.id);
     sent += 1;
@@ -242,4 +255,54 @@ export async function sendPendingCampaigns(limit = 50) {
   }
 
   return { sent, simulated };
+}
+
+export async function attributeCampaignConversions(userId: string, orderId: string) {
+  const order = await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      userId,
+      status: { in: ["PAID", "PROCESSING", "SHIPPED", "DELIVERED"] },
+    },
+    include: {
+      items: { include: { variant: { include: { product: true } } } },
+    },
+  });
+  if (!order) return 0;
+
+  const since = new Date(order.createdAt);
+  since.setDate(since.getDate() - CAMPAIGN_CONVERSION_DAYS);
+
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      userId,
+      status: "SENT",
+      convertedAt: null,
+      sentAt: { gte: since, lte: order.createdAt },
+    },
+    include: { pet: true },
+  });
+
+  const orderProductSpecies = order.items.map((item) => item.variant.product.suitableFor);
+  let converted = 0;
+  for (const campaign of campaigns) {
+    if (
+      !campaignWouldConvert({
+        sentAt: campaign.sentAt,
+        convertedAt: campaign.convertedAt,
+        orderedAt: order.createdAt,
+        type: campaign.type,
+        petSpecies: campaign.pet?.species,
+        orderProductSpecies,
+      })
+    ) {
+      continue;
+    }
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { convertedAt: order.createdAt, convertedOrderId: order.id },
+    });
+    converted += 1;
+  }
+  return converted;
 }

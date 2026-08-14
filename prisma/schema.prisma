@@ -246,11 +246,14 @@ model Order {
   totalHkd        Int
   stripePaymentId String?
   shippingAddress Json
+  pointsRedeemed  Int         @default(0)
+  discountHkd     Int         @default(0)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  user  User        @relation(fields: [userId], references: [id])
-  items OrderItem[]
+  user                  User        @relation(fields: [userId], references: [id])
+  items                 OrderItem[]
+  campaignConversions   Campaign[]
 }
 
 model OrderItem {
@@ -283,12 +286,15 @@ model Campaign {
   title       String
   body        String
   status      CampaignStatus @default(PENDING)
-  scheduledAt DateTime       @default(now())
-  sentAt      DateTime?
-  createdAt   DateTime       @default(now())
+  scheduledAt      DateTime       @default(now())
+  sentAt           DateTime?
+  convertedAt      DateTime?
+  convertedOrderId String?
+  createdAt        DateTime       @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pet  Pet? @relation(fields: [petId], references: [id], onDelete: SetNull)
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pet            Pet?   @relation(fields: [petId], references: [id], onDelete: SetNull)
+  convertedOrder Order? @relation(fields: [convertedOrderId], references: [id], onDelete: SetNull)
 }
 
 model Address {

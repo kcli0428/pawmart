@@ -17,7 +17,8 @@ import { requireAdmin } from "@/lib/session";
 export default async function AdminCrmPage() {
   await requireAdmin();
 
-  const [runningLow, birthdays, stages, campaigns, subscriptions] = await Promise.all([
+  const [runningLow, birthdays, stages, campaigns, subscriptions, sentCount, convertedCount] =
+    await Promise.all([
     getRunningLowAlerts(),
     getUpcomingBirthdays(),
     getLifeStageSuggestions(),
@@ -34,7 +35,14 @@ export default async function AdminCrmPage() {
       },
       orderBy: { nextDeliveryAt: "asc" },
     }),
+    prisma.campaign.count({ where: { sentAt: { not: null } } }),
+    prisma.campaign.count({ where: { convertedAt: { not: null } } }),
   ]);
+  const conversion = {
+    sent: sentCount,
+    converted: convertedCount,
+    rate: sentCount === 0 ? 0 : Math.round((convertedCount / sentCount) * 100),
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -43,7 +51,10 @@ export default async function AdminCrmPage() {
       </Link>
       <h1 className="mt-2 text-3xl font-bold">CRM 與自動化行銷</h1>
       <p className="mt-1 text-zinc-600">
-        「快吃完了」催購、生日與生命階段行銷；未設定 RESEND_API_KEY 時改為模擬發送
+        「快吃完了」催購、生日與生命階段行銷；發送後 14 天內下單會記為轉換。未設定 RESEND_API_KEY 時改為模擬發送
+      </p>
+      <p className="mt-3 text-sm text-amber-800">
+        已發送 {conversion.sent} 封 · 已轉換 {conversion.converted} 筆 · 轉換率 {conversion.rate}%
       </p>
 
       <div className="mt-6 flex flex-wrap gap-3">
@@ -153,11 +164,21 @@ export default async function AdminCrmPage() {
           >
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-amber-600">
-                {CAMPAIGN_TYPE_LABELS[campaign.type]} · {campaign.status === "SENT" ? "已發送" : "待發送"}
+                {CAMPAIGN_TYPE_LABELS[campaign.type]} ·{" "}
+                {campaign.convertedAt
+                  ? "已轉換"
+                  : campaign.status === "SENT"
+                    ? "已發送"
+                    : "待發送"}
               </p>
               <p className="mt-1 font-semibold">{campaign.title}</p>
               <p className="mt-1 text-sm text-zinc-600">{campaign.body}</p>
               <p className="mt-1 text-xs text-zinc-500">{campaign.user.email}</p>
+              {campaign.convertedAt && (
+                <p className="mt-1 text-xs text-green-700">
+                  {campaign.convertedAt.toLocaleDateString("zh-HK")} 已下單
+                </p>
+              )}
             </div>
             {campaign.status === "PENDING" && (
               <form action={sendCampaignAction}>

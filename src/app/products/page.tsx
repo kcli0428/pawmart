@@ -9,6 +9,7 @@ import {
 } from "@/lib/constants";
 import type { PetLifeStage, PetSpecies, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
+import { scoreProductForPet, nutritionCaption } from "@/lib/recommendations";
 
 type Props = {
   searchParams: Promise<{
@@ -88,18 +89,44 @@ export default async function ProductsPage({ searchParams }: Props) {
       variants: {
         where: { isActive: true },
         orderBy: { priceHkd: "asc" },
-        take: 1,
       },
       allergens: { include: { allergen: true } },
     },
     orderBy: { name: "asc" },
   });
 
+  const ranked = selectedPet
+    ? [...products].sort((a, b) => {
+        const pack = (product: (typeof products)[number]) =>
+          product.variants.find((variant) => variant.weightGrams != null)?.weightGrams ?? null;
+        return (
+          scoreProductForPet(
+            {
+              kcalPer100g: b.kcalPer100g,
+              proteinPct: b.proteinPct,
+              lifeStages: b.lifeStages,
+              packWeightGrams: pack(b),
+            },
+            selectedPet,
+          ) -
+          scoreProductForPet(
+            {
+              kcalPer100g: a.kcalPer100g,
+              proteinPct: a.proteinPct,
+              lifeStages: a.lifeStages,
+              packWeightGrams: pack(a),
+            },
+            selectedPet,
+          )
+        );
+      })
+    : products;
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-3xl font-bold">全部商品</h1>
       <p className="mt-2 text-zinc-600">
-        依品種、生命階段與過敏原智慧篩選；登入後可直接套用寵物檔案。
+        依品種、生命階段與過敏原智慧篩選；登入後可直接套用寵物檔案，並依每日熱量吻合排序。
       </p>
 
       <form className="mt-6 grid gap-3 rounded-2xl border border-amber-100 bg-white p-4 md:grid-cols-5">
@@ -207,11 +234,13 @@ export default async function ProductsPage({ searchParams }: Props) {
         ))}
       </div>
 
-      {products.length > 0 ? (
+      {ranked.length > 0 ? (
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {products.map((product) => {
+          {ranked.map((product) => {
             const variant = product.variants[0];
             if (!variant) return null;
+            const packWeightGrams =
+              product.variants.find((item) => item.weightGrams != null)?.weightGrams ?? null;
             return (
               <div key={product.id}>
                 <ProductCard
@@ -221,6 +250,14 @@ export default async function ProductsPage({ searchParams }: Props) {
                   imageUrl={product.imageUrl}
                   priceHkd={variant.priceHkd}
                   compareAtPrice={variant.compareAtPrice}
+                  caption={
+                    selectedPet
+                      ? nutritionCaption(
+                          { kcalPer100g: product.kcalPer100g, packWeightGrams },
+                          selectedPet,
+                        )
+                      : undefined
+                  }
                 />
                 {product.allergens.length > 0 && (
                   <p className="mt-1 px-1 text-xs text-zinc-500">

@@ -29,7 +29,7 @@ export default async function PointsPage() {
           <p className="mt-2 text-sm text-zinc-600">已達最高白金等級</p>
         )}
         <p className="mt-4 text-xs text-zinc-500">
-          青銅 0 / 白銀 500 / 黃金 2,000 / 白金 5,000。每消費 HK$1 累積 1 點。
+          青銅 0 / 白銀 500 / 黃金 2,000 / 白金 5,000。每消費 HK$1 累積 1 點；結帳時 100 點可折抵 HK$1。
         </p>
       </div>
       <h2 className="mt-8 font-semibold">點數紀錄</h2>
@@ -43,7 +43,9 @@ export default async function PointsPage() {
             className="flex justify-between rounded-xl border border-amber-50 bg-white px-4 py-3 text-sm"
           >
             <span>{tx.reason}</span>
-            <span className="font-medium text-amber-700">+{tx.amount}</span>
+            <span className={tx.amount < 0 ? "font-medium text-zinc-600" : "font-medium text-amber-700"}>
+              {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
+            </span>
           </li>
         ))}
       </ul>

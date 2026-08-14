@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { pointsFromCents, tierFromBalance, nextTier } from "./points";
+import { pointsFromCents, tierFromBalance, nextTier, centsFromPoints, maxRedeemablePoints, clampRedeemPoints } from "./points";
 
 describe("points", () => {
   it("awards one point per HKD", () => {
@@ -19,5 +19,13 @@ describe("points", () => {
   it("reports remaining points until the next tier", () => {
     assert.deepEqual(nextTier(100), { tier: "SILVER", remaining: 400 });
     assert.equal(nextTier(5000), null);
+  });
+
+  it("redeems 100 points as HK$1 and never exceeds the subtotal", () => {
+    assert.equal(centsFromPoints(100), 100);
+    assert.equal(maxRedeemablePoints(500, 19800), 500);
+    assert.equal(maxRedeemablePoints(50000, 19800), 19800);
+    assert.equal(clampRedeemPoints(9999, 500, 19800), 500);
+    assert.equal(clampRedeemPoints(-10, 500, 19800), 0);
   });
 });

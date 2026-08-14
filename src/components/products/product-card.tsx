@@ -9,6 +9,7 @@ type ProductCardProps = {
   imageUrl?: string | null;
   priceHkd: number;
   compareAtPrice?: number | null;
+  caption?: string;
 };
 
 export function ProductCard({
@@ -18,6 +19,7 @@ export function ProductCard({
   imageUrl,
   priceHkd,
   compareAtPrice,
+  caption,
 }: ProductCardProps) {
   return (
     <Link
@@ -54,6 +56,7 @@ export function ProductCard({
             </span>
           )}
         </div>
+        {caption ? <p className="mt-1 text-xs text-amber-700">{caption}</p> : null}
       </div>
     </Link>
   );

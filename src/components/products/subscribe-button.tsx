@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createSubscriptionAction } from "@/app/account/actions";
+import { SUBSCRIPTION_INTERVALS } from "@/lib/constants";
 
 type PetOption = { id: string; name: string };
 
@@ -59,9 +60,11 @@ export function SubscribeButton({
         defaultValue="30"
         className="w-full rounded-lg border border-amber-200 px-2 py-1 text-xs"
       >
-        <option value="14">每 14 天</option>
-        <option value="30">每 30 天</option>
-        <option value="60">每 60 天</option>
+        {SUBSCRIPTION_INTERVALS.map((days) => (
+          <option key={days} value={days}>
+            每 {days} 天
+          </option>
+        ))}
       </select>
       <Button type="submit" size="sm" disabled={pending}>
         {pending ? "建立中…" : "確認訂閱"}

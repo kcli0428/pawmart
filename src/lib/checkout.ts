@@ -1,10 +1,11 @@
 import { OrderStatus } from "@/generated/prisma/client";
 import { getDefaultAddress, snapshotAddress } from "@/lib/addresses";
+import { attributeCampaignConversions } from "@/lib/campaigns";
 import { deductInventory } from "@/lib/inventory";
-import { pointsFromCents, tierFromBalance } from "@/lib/points";
+import { clampRedeemPoints, centsFromPoints, pointsFromCents, tierFromBalance } from "@/lib/points";
 import { prisma } from "@/lib/prisma";
 
-export async function placeOrder(userId: string) {
+export async function placeOrder(userId: string, input: { redeemPoints?: number } = {}) {
   const cart = await prisma.cart.findUnique({
     where: { userId },
     include: {
@@ -26,8 +27,20 @@ export async function placeOrder(userId: string) {
     (sum, item) => sum + item.variant.priceHkd * item.quantity,
     0,
   );
+  const account = await prisma.pointsAccount.upsert({
+    where: { userId },
+    create: { userId, balance: 0, tier: "BRONZE" },
+    update: {},
+  });
+  const redeem = clampRedeemPoints(input.redeemPoints ?? 0, account.balance, subtotal);
+  const discountHkd = centsFromPoints(redeem);
+  const totalHkd = Math.max(0, subtotal - discountHkd);
   const orderNumber = `PM-${Date.now()}`;
   const shipping = snapshotAddress(await getDefaultAddress(userId));
+
+  if (redeem > 0) {
+    await applyPointsDelta(userId, -redeem, `訂單 ${orderNumber} 點數折抵`);
+  }
 
   const order = await prisma.order.create({
     data: {
@@ -35,7 +48,9 @@ export async function placeOrder(userId: string) {
       userId,
       status: OrderStatus.PENDING,
       subtotalHkd: subtotal,
-      totalHkd: subtotal,
+      discountHkd,
+      pointsRedeemed: redeem,
+      totalHkd,
       shippingAddress: shipping,
       items: {
         create: cart.items.map((item) => ({
@@ -57,6 +72,9 @@ export async function placeOrder(userId: string) {
       where: { id: order.id },
       data: { status: OrderStatus.CANCELLED },
     });
+    if (redeem > 0) {
+      await applyPointsDelta(userId, redeem, `訂單 ${orderNumber} 取消退回點數`);
+    }
     throw error;
   }
 
@@ -65,8 +83,8 @@ export async function placeOrder(userId: string) {
     data: { status: OrderStatus.PAID },
   });
 
-  await awardPurchasePoints(userId, subtotal, `訂單 ${orderNumber} 購物回饋`);
-
+  await awardPurchasePoints(userId, totalHkd, `訂單 ${orderNumber} 購物回饋`);
+  await attributeCampaignConversions(userId, order.id);
   await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
 
   return order;
@@ -132,13 +150,13 @@ export async function fulfillSubscriptionOrder(subscriptionId: string) {
     price,
     `訂閱訂單 ${orderNumber} 購物回饋`,
   );
+  await attributeCampaignConversions(subscription.userId, order.id);
 
   return order;
 }
 
-async function awardPurchasePoints(userId: string, cents: number, reason: string) {
-  const points = pointsFromCents(cents);
-  if (points <= 0) return;
+async function applyPointsDelta(userId: string, amount: number, reason: string) {
+  if (amount === 0) return;
 
   const account = await prisma.pointsAccount.upsert({
     where: { userId },
@@ -146,12 +164,22 @@ async function awardPurchasePoints(userId: string, cents: number, reason: string
     update: {},
   });
 
-  const balance = account.balance + points;
+  if (amount < 0 && account.balance < -amount) {
+    throw new Error("POINTS_INSUFFICIENT");
+  }
+
+  const balance = account.balance + amount;
   await prisma.pointsAccount.update({
     where: { id: account.id },
     data: { balance, tier: tierFromBalance(balance) },
   });
   await prisma.pointsTransaction.create({
-    data: { accountId: account.id, amount: points, reason },
+    data: { accountId: account.id, amount, reason },
   });
+}
+
+async function awardPurchasePoints(userId: string, cents: number, reason: string) {
+  const points = pointsFromCents(cents);
+  if (points <= 0) return;
+  await applyPointsDelta(userId, points, reason);
 }

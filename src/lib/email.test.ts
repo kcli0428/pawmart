@@ -7,5 +7,8 @@ describe("campaignEmailHtml", () => {
     const html = campaignEmailHtml("Mochi 快吃完了", "估計還剩 3 天。");
     assert.match(html, /Mochi 快吃完了/);
     assert.match(html, /估計還剩 3 天。/);
+    const withCta = campaignEmailHtml("Mochi 快吃完了", "估計還剩 3 天。", "https://pawmart.hk/products");
+    assert.match(withCta, /前往選購/);
+    assert.match(withCta, /pawmart\.hk\/products/);
   });
 });

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { signOut } from "@/lib/auth";
-import { HK_DISTRICTS } from "@/lib/constants";
+import { HK_DISTRICTS, SUBSCRIPTION_INTERVALS } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -53,6 +53,60 @@ export async function updateSubscriptionStatusAction(formData: FormData) {
   });
 
   revalidatePath("/account/subscriptions");
+}
+
+export type SubscriptionActionState = { error?: string; ok?: string } | null;
+
+export async function updateSubscriptionDetailsAction(
+  _prev: SubscriptionActionState,
+  formData: FormData,
+): Promise<SubscriptionActionState> {
+  const session = await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const variantId = String(formData.get("variantId") ?? "");
+  const petIdRaw = String(formData.get("petId") ?? "");
+  const intervalDays = Number(formData.get("intervalDays") ?? 0);
+  const quantity = Number(formData.get("quantity") ?? 0);
+  const nextRaw = String(formData.get("nextDeliveryAt") ?? "");
+
+  if (!id) return { error: "找不到訂閱" };
+  if (!SUBSCRIPTION_INTERVALS.includes(intervalDays as (typeof SUBSCRIPTION_INTERVALS)[number])) {
+    return { error: "請選擇 14、30 或 60 天週期" };
+  }
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return { error: "數量須為正整數" };
+  }
+  const nextDeliveryAt = new Date(`${nextRaw}T00:00:00`);
+  if (!nextRaw || Number.isNaN(nextDeliveryAt.getTime())) {
+    return { error: "請選擇下次配送日期" };
+  }
+
+  const owned = await prisma.subscription.findFirst({
+    where: { id, userId: session.user.id, status: { not: "CANCELLED" } },
+  });
+  if (!owned) return { error: "找不到訂閱" };
+
+  const variant = await prisma.productVariant.findFirst({
+    where: { id: variantId, isActive: true },
+  });
+  if (!variant) return { error: "請選擇有效規格" };
+
+  let petId: string | null = null;
+  if (petIdRaw) {
+    const pet = await prisma.pet.findFirst({
+      where: { id: petIdRaw, userId: session.user.id },
+    });
+    if (!pet) return { error: "請選擇你的寵物" };
+    petId = pet.id;
+  }
+
+  await prisma.subscription.update({
+    where: { id },
+    data: { variantId, petId, intervalDays, quantity, nextDeliveryAt },
+  });
+
+  revalidatePath("/account/subscriptions");
+  return { ok: "已更新定期補貨" };
 }
 
 export type AddressActionState = { error?: string; ok?: string } | null;

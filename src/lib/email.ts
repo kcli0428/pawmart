@@ -13,11 +13,15 @@ function recipientsOf(to: string | string[]) {
   return Array.isArray(to) ? to : [to];
 }
 
-export function campaignEmailHtml(title: string, body: string) {
+export function campaignEmailHtml(title: string, body: string, shopUrl?: string) {
+  const cta = shopUrl
+    ? `<p><a href="${shopUrl}" style="color: #b45309;">前往選購 →</a></p>`
+    : "";
   return `
     <div style="font-family: sans-serif; line-height: 1.6; color: #18181b;">
       <h1 style="font-size: 18px;">${title}</h1>
       <p>${body}</p>
+      ${cta}
       <p style="color: #71717a; font-size: 12px;">PawMart 香港寵物用品</p>
     </div>
   `;

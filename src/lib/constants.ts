@@ -101,6 +101,8 @@ export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
   CANCELLED: "已取消",
 };
 
+export const SUBSCRIPTION_INTERVALS = [14, 30, 60] as const;
+
 export const HK_DISTRICTS = [
   "中西區",
   "灣仔",

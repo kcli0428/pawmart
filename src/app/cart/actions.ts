@@ -8,17 +8,21 @@ export type CheckoutState = { error?: string } | null;
 
 export async function checkoutAction(
   _prev: CheckoutState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<CheckoutState> {
   void _prev;
-  void _formData;
   const session = await requireUser();
   try {
-    const order = await placeOrder(session.user.id);
+    const redeemPoints =
+      formData.get("usePoints") === "on" ? Number.MAX_SAFE_INTEGER : 0;
+    const order = await placeOrder(session.user.id, { redeemPoints });
     redirect(`/account/orders/${order.id}`);
   } catch (error) {
     if (error instanceof Error && error.message === "EMPTY_CART") {
       return { error: "購物車是空的" };
+    }
+    if (error instanceof Error && error.message === "POINTS_INSUFFICIENT") {
+      return { error: "點數不足，請取消折抵後再試" };
     }
     if (error instanceof Error && error.message.startsWith("缺貨")) {
       return { error: error.message };

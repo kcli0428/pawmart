@@ -95,7 +95,11 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </div>
         ))}
       </div>
-      <p className="mt-6 text-right text-lg font-bold">合計 {formatHkd(order.totalHkd)}</p>
+      <p className="mt-6 text-right text-sm text-zinc-600">
+        小計 {formatHkd(order.subtotalHkd)}
+        {order.discountHkd > 0 ? ` · 點數折抵 −${formatHkd(order.discountHkd)}` : ""}
+      </p>
+      <p className="mt-1 text-right text-lg font-bold">合計 {formatHkd(order.totalHkd)}</p>
     </div>
   );
 }

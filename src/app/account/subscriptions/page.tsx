@@ -5,22 +5,38 @@ import { formatHkd } from "@/lib/utils";
 import { SUBSCRIPTION_STATUS_LABELS } from "@/lib/constants";
 import { updateSubscriptionStatusAction } from "@/app/account/actions";
 import { Button } from "@/components/ui/button";
+import { SubscriptionEditor } from "@/components/account/subscription-editor";
 
 export default async function SubscriptionsPage() {
   const session = await requireUser();
-  const subscriptions = await prisma.subscription.findMany({
-    where: { userId: session.user.id },
-    include: {
-      variant: { include: { product: true } },
-      pet: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [subscriptions, pets] = await Promise.all([
+    prisma.subscription.findMany({
+      where: { userId: session.user.id },
+      include: {
+        variant: {
+          include: {
+            product: {
+              include: { variants: { where: { isActive: true }, orderBy: { priceHkd: "asc" } } },
+            },
+          },
+        },
+        pet: true,
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.pet.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   return (
     <div>
       <h1 className="text-3xl font-bold">定期補貨</h1>
-      <p className="mt-1 text-zinc-600">自動依週期產生訂單；快到期時會出現在 CRM 催購清單。</p>
+      <p className="mt-1 text-zinc-600">
+        可暫停、改週期／規格／數量與下次配送日；快到期時會出現在 CRM 催購清單。
+      </p>
       {subscriptions.length === 0 ? (
         <p className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-white p-8 text-center text-zinc-500">
           尚未設定訂閱。{" "}
@@ -52,32 +68,49 @@ export default async function SubscriptionsPage() {
                 </span>
               </div>
               {sub.status !== "CANCELLED" && (
-                <div className="mt-4 flex gap-2">
-                  {sub.status === "ACTIVE" ? (
+                <>
+                  <SubscriptionEditor
+                    subscription={{
+                      id: sub.id,
+                      variantId: sub.variantId,
+                      petId: sub.petId,
+                      intervalDays: sub.intervalDays,
+                      quantity: sub.quantity,
+                      nextDeliveryAt: sub.nextDeliveryAt.toISOString().slice(0, 10),
+                    }}
+                    variants={sub.variant.product.variants.map((variant) => ({
+                      id: variant.id,
+                      name: variant.name,
+                    }))}
+                    pets={pets}
+                  />
+                  <div className="mt-3 flex gap-2">
+                    {sub.status === "ACTIVE" ? (
+                      <form action={updateSubscriptionStatusAction}>
+                        <input type="hidden" name="id" value={sub.id} />
+                        <input type="hidden" name="status" value="PAUSED" />
+                        <Button type="submit" size="sm" variant="outline">
+                          暫停
+                        </Button>
+                      </form>
+                    ) : (
+                      <form action={updateSubscriptionStatusAction}>
+                        <input type="hidden" name="id" value={sub.id} />
+                        <input type="hidden" name="status" value="ACTIVE" />
+                        <Button type="submit" size="sm">
+                          恢復
+                        </Button>
+                      </form>
+                    )}
                     <form action={updateSubscriptionStatusAction}>
                       <input type="hidden" name="id" value={sub.id} />
-                      <input type="hidden" name="status" value="PAUSED" />
-                      <Button type="submit" size="sm" variant="outline">
-                        暫停
+                      <input type="hidden" name="status" value="CANCELLED" />
+                      <Button type="submit" size="sm" variant="ghost">
+                        取消
                       </Button>
                     </form>
-                  ) : (
-                    <form action={updateSubscriptionStatusAction}>
-                      <input type="hidden" name="id" value={sub.id} />
-                      <input type="hidden" name="status" value="ACTIVE" />
-                      <Button type="submit" size="sm">
-                        恢復
-                      </Button>
-                    </form>
-                  )}
-                  <form action={updateSubscriptionStatusAction}>
-                    <input type="hidden" name="id" value={sub.id} />
-                    <input type="hidden" name="status" value="CANCELLED" />
-                    <Button type="submit" size="sm" variant="ghost">
-                      取消
-                    </Button>
-                  </form>
-                </div>
+                  </div>
+                </>
               )}
             </div>
           ))}

@@ -42,7 +42,7 @@ export default async function AccountHomePage() {
           </Link>
         ))}
       </div>
-        <p className="mt-8 text-sm text-zinc-500">每消費 HK$1 累積 1 點，可於點數頁查看等級進度。</p>
+        <p className="mt-8 text-sm text-zinc-500">每消費 HK$1 累積 1 點；結帳時 100 點可折抵 HK$1。</p>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { CheckoutButton } from "@/components/cart/checkout-button";
 import { CartItemControls } from "@/components/cart/cart-item-controls";
 import { getDefaultAddress } from "@/lib/addresses";
+import { maxRedeemablePoints } from "@/lib/points";
 
 async function getCartItems(userId?: string, sessionId?: string) {
   const cart = await prisma.cart.findFirst({
@@ -46,6 +47,12 @@ export default async function CartPage() {
   const shippingAddress = session?.user
     ? await getDefaultAddress(session.user.id)
     : null;
+  const pointsAccount = session?.user
+    ? await prisma.pointsAccount.findUnique({ where: { userId: session.user.id } })
+    : null;
+  const maxRedeem = session?.user
+    ? maxRedeemablePoints(pointsAccount?.balance ?? 0, total)
+    : 0;
 
   if (items.length === 0) {
     return (
@@ -109,7 +116,11 @@ export default async function CartPage() {
           <span className="text-amber-700">{formatHkd(total)}</span>
         </div>
         {session?.user ? (
-          <CheckoutButton />
+          <CheckoutButton
+            subtotalHkd={total}
+            pointsBalance={pointsAccount?.balance ?? 0}
+            maxRedeemPoints={maxRedeem}
+          />
         ) : (
           <p className="mt-4 text-center text-sm text-zinc-600">
             <Link href="/login" className="text-amber-700 hover:underline">

@@ -63,7 +63,7 @@ export default async function PetsPage() {
                         )}
                         {dailyKcal && (
                           <p className="mt-1 text-sm text-amber-700">
-                            估算每日熱量需求：约 {dailyKcal} kcal
+                            估算每日熱量需求：約 {dailyKcal} kcal
                           </p>
                         )}
                         {pet.allergies.length > 0 && (
@@ -91,7 +91,7 @@ export default async function PetsPage() {
                     {recommendations.length > 0 && (
                       <div className="mt-6">
                         <h4 className="text-sm font-semibold text-zinc-700">
-                          為 {pet.name} 推薦
+                          為 {pet.name} 推薦（依熱量吻合排序）
                         </h4>
                         <div className="mt-3 grid gap-4 sm:grid-cols-2">
                           {recommendations.map((product) => {
@@ -105,6 +105,7 @@ export default async function PetsPage() {
                                 brand={product.brand}
                                 imageUrl={product.imageUrl}
                                 priceHkd={variant.priceHkd}
+                                caption={product.caption}
                               />
                             );
                           })}
