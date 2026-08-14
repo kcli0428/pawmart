@@ -1,0 +1,16 @@
+---
+description: Storefront catalog, pet profiles, recommendations, and allergen filtering
+globs: src/app/products/**/*.tsx,src/app/account/pets/**/*.tsx,src/components/products/**/*.tsx,src/components/pets/**/*.tsx,src/lib/recommendations.ts
+alwaysApply: false
+---
+
+# Storefront and personalization
+
+- Filter catalog by category, species (`suitableFor`), life stage, allergen exclusion, and optional `petId` (apply that pet’s species/stage/allergies).
+- Allergen matching must use both `Allergen.name` and `Allergen.nameZh` (pets store Chinese names like `穀物`).
+- Recommendations: species + life stage + allergen avoid. Scoring/nutrition ranking is Phase 6 — do not fake AI ranking.
+- Daily kcal: `estimateDailyKcal()` (RER). Keep the formula in `src/lib/recommendations.ts`.
+- Product cards and detail pages show HKD via `formatHkd`. Stock `0` disables add-to-cart.
+- Subscribe CTA only for logged-in members; intervals 14 / 30 / 60 days.
+- Guest cart uses `cart_session` cookie; member cart is keyed by `userId`.
+- Prefer `<Link>` over raw `<a>` for internal routes.

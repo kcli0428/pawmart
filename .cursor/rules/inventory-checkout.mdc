@@ -1,0 +1,16 @@
+---
+description: FEFO lots, case/bundle unpack, inbound receiving, and checkout inventory
+globs: src/lib/inventory*.ts,src/lib/checkout.ts,src/app/admin/inventory/**/*.tsx,src/app/cart/**/*.ts,src/app/api/checkout/**/*.ts,src/components/admin/**/*.tsx
+alwaysApply: false
+---
+
+# Supply chain and checkout
+
+- Unit types: `SINGLE` | `CASE` | `BUNDLE`. CASE expands with `unitsPerCase` (seed uses 12). BUNDLE expands via `BundleItem`.
+- Deduct **FEFO** (earliest `ProductLot.expiryDate` first) on the tracked SINGLE (or bundle components). Record `LotDeduction` on the order item.
+- `receiveLot` upserts lot number + expiry and increments `stockQuantity`.
+- If Stripe is not configured, demo checkout may mark paid immediately. When Stripe Checkout exists: keep order `PENDING`, deduct and set `PAID` **only** in the webhook after `checkout.session.completed`.
+- On deduction failure, mark the order `CANCELLED` — do not leave a paid order with undeducted stock.
+- Award points only after a successful `PAID` order (`pointsFromCents`, then `tierFromBalance`).
+- Do not decrement lots below zero. Throw `INSUFFICIENT_STOCK` / `INSUFFICIENT_LOT_STOCK`.
+- Pure allocation math lives in `src/lib/inventory-logic.ts` and must stay unit-tested.

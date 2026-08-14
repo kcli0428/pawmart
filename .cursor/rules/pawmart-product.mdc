@@ -1,0 +1,39 @@
+---
+alwaysApply: true
+description: PawMart product identity, roadmap, and what to build next
+---
+
+# PawMart — 香港寵物用品零售平台
+
+Traditional Chinese (zh-HK) storefront. Copy, dates, and currency use Hong Kong conventions. Prices are stored as **integer HKD cents** (`priceHkd`); never floats. Format with `formatHkd()` from `src/lib/utils.ts`.
+
+## Three modules (original spec)
+
+1. **Storefront** — catalog, cart, payment, membership, multi-pet profiles, subscriptions, nutrition/recommendations, allergen filters.
+2. **Supply chain** — lot numbers, expiry alerts, SINGLE / CASE (12) / BUNDLE auto-unpack stock.
+3. **CRM** — “快吃完了” reorder, birthday / life-stage campaigns, tiered pet points.
+
+## Status (do not re-build these)
+
+- **Phase 1 done:** catalog, cart, Auth.js login, pet profiles, recommendations, RER kcal estimate, Docker Postgres.
+- **Phase 2 core done:** FEFO lot deduction, inbound receiving, case/bundle unpack, 30-day expiry dashboard.
+- **Phase 3 skeleton done:** 14/30/60-day subscriptions (schedule only), CRM campaign records, points earn (HK$1 = 1 point, Bronze→Platinum), `/api/cron/crm`.
+- Checkout without Stripe is a **demo paid order**. Do not treat that as production payments.
+
+## Next work (priority order)
+
+1. **Phase 4 — real payments:** Stripe Checkout (HKD, HK account) + webhook. Mark `PAID` and deduct inventory only after successful payment. Then Stripe Subscriptions.
+2. **Phase 5 — ops admin:** product/variant CRUD, ship orders (`PAID` → `SHIPPED`), edit/delete pets, shipping addresses, cart qty/remove, real email (Resend/SendGrid) for CRM.
+3. **Phase 2 remaining:** case inbound → 12 single lots, stocktake/transfer, expiry emails.
+4. **Phase 3 remaining / Phase 6:** points redeem, feeding-gram reorder math, auto life-stage update.
+5. Later: CI/E2E, cloud deploy, PWA/App.
+
+When the user does not specify a feature, implement the **next unfinished Phase 4 item**, not a new module.
+
+## Invariants
+
+- Market: Hong Kong. Payment currency: HKD.
+- Roles: `CUSTOMER` | `ADMIN`. Protect `/admin/**` with `requireAdmin()`.
+- Do not edit `src/generated/prisma/**`, `.next/**`, or commit `.env`.
+- Prisma 7: `DATABASE_URL` lives in `prisma.config.ts` (never undefined). Schema datasource has provider only.
+- Read Next.js 16 guides in `node_modules/next/dist/docs/` before using App Router APIs. Heed deprecation notices.

@@ -1,0 +1,15 @@
+---
+description: Prisma 7 schema, migrations, seed, and DATABASE_URL config
+globs: prisma/**,prisma.config.ts,docker-compose.yml,scripts/ensure-env.mjs,.env.example
+alwaysApply: false
+---
+
+# Prisma and local database
+
+- Prisma 7: `url` is required on `prisma.config.ts` `datasource`. Load `.env`, then `.env.example`. Never pass `undefined`.
+- `schema.prisma` `datasource db` has `provider = "postgresql"` only (no url).
+- New tables/enums: add a timestamped folder under `prisma/migrations/` (or `npm run db:migrate:dev`) with SQL plus schema update.
+- Seed must be idempotent (`upsert` / find-first). Do not fail on re-run. Keep demo lots, bundle, pets Mochi/Bagel, soon-due subscription, and running-low order.
+- Docker Compose service `db` is `pawmart-db`, `POSTGRES_DB=pawmart`, user/password `postgres`, port 5432, matching `.env.example`.
+- `npm run db:migrate` = ensure `.env` + `prisma migrate deploy` (apply existing). Use `db:migrate:dev` only when creating a new migration.
+- Do not commit `.env`. Do not hand-edit `src/generated/prisma`.

@@ -1,0 +1,36 @@
+---
+alwaysApply: true
+description: PawMart stack, file layout, and engineering defaults
+---
+
+# Stack and layout
+
+- Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4.
+- PostgreSQL + Prisma 7 (`@prisma/adapter-pg`). Client output: `src/generated/prisma`.
+- Auth.js (NextAuth v5) credentials provider; `trustHost: true`.
+- UI copy is Traditional Chinese. Code, commits, and identifiers are English.
+
+```
+src/app/           pages + Route Handlers
+src/app/admin/     admin UI (require ADMIN)
+src/app/account/   member hub (require login)
+src/lib/           domain logic (inventory, checkout, campaigns, points)
+prisma/            schema + migrations + seed
+```
+
+## Conventions
+
+- Server Components by default. `"use client"` only for forms, buttons, and `useActionState`.
+- Mutations: Server Actions in `actions.ts` next to the route, or Route Handlers under `src/app/api/`.
+- Validate inputs with Zod at the action/route boundary.
+- Import Prisma enums/types from `@/generated/prisma/client`.
+- After schema changes: `npm run db:migrate:dev` (or add SQL under `prisma/migrations/`) then `prisma generate`.
+- Keep FEFO, points, and CRM math in `src/lib/*-logic.ts` / `src/lib/crm.ts` / `src/lib/points.ts` with `src/lib/*.test.ts` (`npm test`).
+- Do not add new npm dependencies unless the task requires them.
+
+## Local commands
+
+- `npm run db:up` — Docker Compose Postgres (`pawmart-db`, port 5432).
+- `npm run db:migrate` — copies `.env` from example if missing, then `prisma migrate deploy`.
+- `npm run db:seed` — demo users `admin@pawmart.hk` / `admin123`, `demo@pawmart.hk` / `demo1234`.
+- `npm run dev` / `npm run build` / `npm test`.
