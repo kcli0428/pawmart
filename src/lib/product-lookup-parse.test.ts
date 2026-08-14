@@ -14,6 +14,8 @@ import {
   htmlToPlainText,
   inferCategoryId,
   inferLifeStages,
+  inferProductBlurb,
+  inferProductLifeStages,
   inferProductSpecies,
   inferSpecies,
   isCatalogNoise,
@@ -126,7 +128,7 @@ describe("nutrition and inference", () => {
     );
     assert.equal(
       inferCategoryId(
-        "Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G",
+        "Astkatta冰島Kidney Care腎臟主食包-雞肉絲清湯（50g）",
         "",
         categories,
       ),
@@ -143,6 +145,14 @@ describe("nutrition and inference", () => {
     assert.deepEqual(
       inferProductSpecies("Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G"),
       ["CAT"],
+    );
+    assert.deepEqual(
+      inferProductLifeStages("Astkatta冰島Kidney Care腎臟主食包-雞肉絲清湯（50g）"),
+      ["ADULT_CAT", "SENIOR_CAT"],
+    );
+    assert.match(
+      inferProductBlurb("Astkatta冰島Kidney Care腎臟主食包-雞肉絲清湯（50g）") ?? "",
+      /腎貓研發的貓用濕糧/,
     );
     assert.equal(isClipartIngredientLabel("Chicken Icon"), true);
     assert.equal(

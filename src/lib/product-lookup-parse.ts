@@ -385,7 +385,9 @@ export function extractIngredientAlts(html: string): string | undefined {
 }
 
 export function extractProductHighlights(text: string): string | undefined {
-  const start = text.search(/all ages formula|產品特點|產品介紹|適合所有/i);
+  const start = text.search(
+    /all ages formula|產品特點|產品介紹|適合所有|kidney care|腎臟保健|低磷|high moisture|wet food|complete food for adult cats/i,
+  );
   const end = text.search(
     /main ingredients|analytical constituents|主要成[份分]|營養分析|保證分析/i,
   );
@@ -531,8 +533,11 @@ export function inferSpecies(text: string): string[] {
 }
 
 const CAT_PRODUCT_CUES =
-  /主食包|主食慕絲|主食罐|慕絲罐|湯包|清湯|腎臟護理|kidney care|貓咪|貓糧|for cats?\b/i;
+  /主食包|主食慕絲|主食罐|慕絲罐|湯包|清湯|腎臟護理|腎貓|kidney care|貓咪|貓糧|for cats?\b/i;
 const DOG_PRODUCT_CUES = /狗糧|犬用|for dogs?\b|狗主食|犬主食|dog food/i;
+const KIDNEY_CARE_CUES = /腎貓|腎臟護理|腎臟保健|腎臟主食|kidney care/i;
+const WET_FOOD_CUES =
+  /濕糧|慕絲|肉泥|罐頭|主食罐|主食包|副食罐|湯包|清湯|保健湯包|濃湯|mousse|p[aâ]t[eé]|wet|canned|pouch|soup|pottage|kidney care/i;
 
 export function inferProductSpecies(query: string, pageText = ""): string[] {
   const fromQuery = inferSpecies(query);
@@ -549,6 +554,34 @@ export function inferProductSpecies(query: string, pageText = ""): string[] {
   if (fromPage.includes("CAT") && !queryWantsDog) return ["CAT"];
   if (fromPage.includes("DOG") && !queryWantsCat) return ["DOG"];
   return fromPage;
+}
+
+export function inferProductLifeStages(query: string, pageText = ""): string[] {
+  const found = inferLifeStages(`${query}\n${pageText}`);
+  if (found.length > 0) return found;
+  const species = inferProductSpecies(query, pageText);
+  if (KIDNEY_CARE_CUES.test(`${query}\n${pageText}`) && species.includes("CAT") && !species.includes("DOG")) {
+    return ["ADULT_CAT", "SENIOR_CAT"];
+  }
+  return [];
+}
+
+export function inferProductBlurb(query: string, pageText = ""): string | undefined {
+  const hay = `${query}\n${pageText}`;
+  const species = inferProductSpecies(query, pageText);
+  const isCat = species.includes("CAT") && !species.includes("DOG");
+  const isKidney = KIDNEY_CARE_CUES.test(hay);
+  const isWet = WET_FOOD_CUES.test(hay);
+  if (isCat && isKidney && isWet) {
+    return "專為腎臟保健及腎貓研發的貓用濕糧。低磷、高水分，有助維持腎臟健康。";
+  }
+  if (isCat && isKidney) {
+    return "專為腎臟保健及腎貓研發。";
+  }
+  if (isCat && isWet) {
+    return "貓用濕糧。";
+  }
+  return undefined;
 }
 
 export function inferLifeStages(text: string): string[] {
@@ -610,14 +643,11 @@ export function inferCategoryId(
 ): string | undefined {
   const q = query.toLowerCase();
   const extra = extraText.toLowerCase();
-  const queryWantsCat = /貓|feline|cat\s*food|\bcats?\b|主食包|主食慕絲|慕絲罐|kidney care|腎臟/.test(
+  const queryWantsCat = /貓|feline|cat\s*food|\bcats?\b|主食包|主食慕絲|慕絲罐|kidney care|腎臟|腎貓/.test(
     q,
   );
   const queryWantsDog = /狗|犬|canine|dog\s*food|\bdogs?\b/.test(q);
-  const queryWantsWet =
-    /濕糧|慕絲|肉泥|罐頭|主食罐|主食包|副食罐|湯包|清湯|mousse|p[aâ]t[eé]|wet|canned|pouch|soup/.test(
-      q,
-    );
+  const queryWantsWet = WET_FOOD_CUES.test(q);
   const queryWantsDry = /乾糧|風乾|kibble|air[\s-]?dried|\bdry\b/.test(q);
 
   const scored = categories

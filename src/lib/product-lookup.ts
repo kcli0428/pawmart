@@ -18,7 +18,8 @@ import {
   inferAllergenIds,
   inferBrand,
   inferCategoryId,
-  inferLifeStages,
+  inferProductBlurb,
+  inferProductLifeStages,
   inferProductSpecies,
   isCatalogNoise,
   isClipartIngredientLabel,
@@ -316,12 +317,14 @@ function productDescription(input: {
   highlights?: string;
   pageDescription?: string;
   wiki?: string;
+  blurb?: string;
 }) {
   const ingredients =
     input.ingredients && !isCatalogNoise(input.ingredients)
       ? `主要成份：${input.ingredients}`
       : undefined;
   const blocks = [
+    usableCopy(input.blurb, input.query),
     usableCopy(input.highlights, input.query),
     usableCopy(input.pageDescription, input.query),
     ingredients,
@@ -428,6 +431,10 @@ export async function lookupProduct(
   const description = productDescription({
     query,
     ingredients,
+    blurb: inferProductBlurb(
+      query,
+      [officialPage?.name, officialPage?.description, officialPage?.highlights].filter(Boolean).join("\n"),
+    ),
     highlights: officialPage?.highlights,
     pageDescription: officialPage?.description,
     wiki: wiki?.description,
@@ -448,16 +455,14 @@ export async function lookupProduct(
       ? officialPage.packSizes
       : extractPackSizes(`${query} ${combinedText}`);
   const weight = packSizes[0] ?? extractWeightLabel(`${query} ${name} ${combinedText}`);
-  const queryStages = inferLifeStages(`${query}\n${officialPage?.name ?? ""}`);
   const species = inferProductSpecies(
     query,
     [officialPage?.name, officialPage?.description, officialPage?.highlights].filter(Boolean).join("\n"),
   );
-  const lifeStages = queryStages.length
-    ? queryStages
-    : inferLifeStages(
-        `${query}\n${officialPage?.highlights ?? ""}\n${officialPage?.description ?? ""}`,
-      );
+  const lifeStages = inferProductLifeStages(
+    query,
+    [officialPage?.name, officialPage?.highlights, officialPage?.description].filter(Boolean).join("\n"),
+  );
 
   const sources: { title: string; url: string }[] = [];
   if (officialPage) {
