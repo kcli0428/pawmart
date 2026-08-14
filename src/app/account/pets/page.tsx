@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PetForm } from "@/components/pets/pet-form";
 import { auth } from "@/lib/auth";
@@ -17,7 +16,7 @@ export default async function PetsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
+    <div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">我的寵物</h1>

@@ -3,12 +3,13 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getExpiringLots } from "@/lib/inventory";
+import { ReceiveLotForm } from "@/components/admin/receive-lot-form";
 
 export default async function AdminInventoryPage() {
   const session = await auth();
   if (!session?.user || session.user.role !== "ADMIN") redirect("/");
 
-  const [lots, bundles] = await Promise.all([
+  const [lots, bundles, variants] = await Promise.all([
     prisma.productLot.findMany({
       include: {
         variant: { include: { product: true } },
@@ -21,6 +22,10 @@ export default async function AdminInventoryPage() {
         componentVariant: { include: { product: true } },
       },
     }),
+    prisma.productVariant.findMany({
+      include: { product: true },
+      orderBy: { sku: "asc" },
+    }),
   ]);
 
   const expiring = await getExpiringLots(30);
@@ -32,8 +37,21 @@ export default async function AdminInventoryPage() {
       </Link>
       <h1 className="mt-2 text-3xl font-bold">批號與庫存</h1>
       <p className="mt-1 text-zinc-600">
-        批號追蹤、有效期限 Alert、組合包拆包扣減邏輯
+        批號追蹤、有效期限 Alert、進貨入庫、組合包拆包扣減
       </p>
+
+      <div className="mt-6 rounded-2xl border border-amber-100 bg-white p-5">
+        <h2 className="text-lg font-semibold">進貨入庫</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          新增批號會同時增加規格庫存；結帳時依 FEFO（先到期先出）扣減。
+        </p>
+        <ReceiveLotForm
+          variants={variants.map((variant) => ({
+            id: variant.id,
+            label: `${variant.product.name} — ${variant.name} (${variant.sku})`,
+          }))}
+        />
+      </div>
 
       {expiring.length > 0 && (
         <div className="mt-6 rounded-2xl border border-orange-200 bg-orange-50 p-4">

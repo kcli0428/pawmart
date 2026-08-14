@@ -45,6 +45,7 @@ export function PetForm() {
         breed: form.get("breed") || undefined,
         weightKg: form.get("weightKg") ? Number(form.get("weightKg")) : undefined,
         lifeStage: form.get("lifeStage") || undefined,
+        birthDate: form.get("birthDate") || undefined,
         allergies,
       }),
     });
@@ -102,6 +103,11 @@ export function PetForm() {
         step="0.1"
         min="0"
         placeholder="體重 kg（選填）"
+        className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm"
+      />
+      <input
+        name="birthDate"
+        type="date"
         className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm"
       />
       <input

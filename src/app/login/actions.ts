@@ -27,5 +27,5 @@ export async function loginAction(
     throw error;
   }
 
-  redirect("/account/pets");
+  redirect("/account");
 }

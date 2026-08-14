@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ShoppingCart, PawPrint, User, LayoutDashboard } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/constants";
+import { logoutAction } from "@/app/account/actions";
 
 export async function Header() {
   const session = await auth();
@@ -22,6 +23,11 @@ export async function Header() {
           <Link href="/account/pets" className="hover:text-amber-700">
             我的寵物
           </Link>
+          {session?.user && (
+            <Link href="/account/subscriptions" className="hover:text-amber-700">
+              定期補貨
+            </Link>
+          )}
           {isAdmin && (
             <Link href="/admin" className="flex items-center gap-1 hover:text-amber-700">
               <LayoutDashboard className="h-4 w-4" />
@@ -39,8 +45,18 @@ export async function Header() {
             <ShoppingCart className="h-5 w-5" />
           </Link>
           {session?.user ? (
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="hidden rounded-full px-3 py-1.5 text-sm text-zinc-600 hover:bg-amber-50 md:inline"
+              >
+                登出
+              </button>
+            </form>
+          ) : null}
+          {session?.user ? (
             <Link
-              href="/account/pets"
+              href="/account"
               className="flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-800"
             >
               <User className="h-4 w-4" />

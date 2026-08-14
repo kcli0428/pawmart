@@ -55,6 +55,17 @@ enum PointsTier {
   PLATINUM
 }
 
+enum CampaignType {
+  REORDER
+  BIRTHDAY
+  LIFE_STAGE
+}
+
+enum CampaignStatus {
+  PENDING
+  SENT
+}
+
 model User {
   id               String    @id @default(cuid())
   email            String    @unique
@@ -72,6 +83,7 @@ model User {
   addresses     Address[]
   subscriptions Subscription[]
   pointsAccount PointsAccount?
+  campaigns     Campaign[]
 }
 
 model Pet {
@@ -91,6 +103,7 @@ model Pet {
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscriptions Subscription[]
+  campaigns     Campaign[]
 }
 
 model Category {
@@ -158,7 +171,8 @@ model ProductLot {
   quantity   Int
   receivedAt DateTime @default(now())
 
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variant    ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  deductions LotDeduction[]
 
   @@unique([variantId, lotNumber])
 }
@@ -238,8 +252,35 @@ model OrderItem {
   quantity  Int
   priceHkd  Int
 
-  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variant ProductVariant @relation(fields: [variantId], references: [id])
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  deductions LotDeduction[]
+}
+
+model LotDeduction {
+  id          String @id @default(cuid())
+  orderItemId String
+  lotId       String
+  quantity    Int
+
+  orderItem OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  lot       ProductLot @relation(fields: [lotId], references: [id], onDelete: Restrict)
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  userId      String
+  petId       String?
+  type        CampaignType
+  title       String
+  body        String
+  status      CampaignStatus @default(PENDING)
+  scheduledAt DateTime       @default(now())
+  sentAt      DateTime?
+  createdAt   DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pet  Pet? @relation(fields: [petId], references: [id], onDelete: SetNull)
 }
 
 model Address {

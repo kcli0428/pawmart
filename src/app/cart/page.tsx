@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatHkd } from "@/lib/utils";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { CheckoutButton } from "@/components/cart/checkout-button";
 
 async function getCartItems(userId?: string, sessionId?: string) {
   const cart = await prisma.cart.findFirst({
@@ -82,14 +82,7 @@ export default async function CartPage() {
           <span className="text-amber-700">{formatHkd(total)}</span>
         </div>
         {session?.user ? (
-          <form action="/api/checkout" method="POST" className="mt-4">
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-amber-600 py-3 font-medium text-white hover:bg-amber-700"
-            >
-              前往 Stripe 結帳（HKD）
-            </button>
-          </form>
+          <CheckoutButton />
         ) : (
           <p className="mt-4 text-center text-sm text-zinc-600">
             <Link href="/login" className="text-amber-700 hover:underline">

@@ -23,7 +23,12 @@ export async function getRecommendationsForPet(pet: PetProfile, limit = 8) {
             NOT: {
               allergens: {
                 some: {
-                  allergen: { name: { in: pet.allergies } },
+                  allergen: {
+                    OR: [
+                      { name: { in: pet.allergies, mode: "insensitive" } },
+                      { nameZh: { in: pet.allergies } },
+                    ],
+                  },
                 },
               },
             },

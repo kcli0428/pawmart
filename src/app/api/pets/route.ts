@@ -10,6 +10,7 @@ const schema = z.object({
   weightKg: z.number().positive().optional(),
   lifeStage: z.enum(["PUPPY", "KITTEN", "ADULT", "SENIOR"]).optional(),
   allergies: z.array(z.string()).default([]),
+  birthDate: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -27,7 +28,13 @@ export async function POST(request: Request) {
   const pet = await prisma.pet.create({
     data: {
       userId: session.user.id,
-      ...parsed.data,
+      name: parsed.data.name,
+      species: parsed.data.species,
+      breed: parsed.data.breed,
+      weightKg: parsed.data.weightKg,
+      lifeStage: parsed.data.lifeStage,
+      allergies: parsed.data.allergies,
+      birthDate: parsed.data.birthDate ? new Date(parsed.data.birthDate) : undefined,
     },
   });
 

@@ -21,7 +21,8 @@ export function Footer() {
               <h3 className="font-semibold text-zinc-800">購物</h3>
               <ul className="mt-2 space-y-1 text-zinc-600">
                 <li><Link href="/products">全部商品</Link></li>
-                <li><Link href="/account/pets">我的寵物</Link></li>
+                <li><Link href="/account">會員中心</Link></li>
+                <li><Link href="/account/subscriptions">定期補貨</Link></li>
               </ul>
             </div>
             <div>

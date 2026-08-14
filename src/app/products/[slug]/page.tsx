@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { AddToCartButton } from "@/components/products/add-to-cart-button";
+import { SubscribeButton } from "@/components/products/subscribe-button";
 import { formatHkd } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 import { PET_SPECIES_LABELS, LIFE_STAGE_LABELS } from "@/lib/constants";
 
 type Props = {
@@ -21,6 +23,14 @@ export default async function ProductDetailPage({ params }: Props) {
   });
 
   if (!product) notFound();
+
+  const session = await auth();
+  const pets = session?.user
+    ? await prisma.pet.findMany({
+        where: { userId: session.user.id },
+        select: { id: true, name: true },
+      })
+    : [];
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -104,10 +114,15 @@ export default async function ProductDetailPage({ params }: Props) {
                     庫存：{variant.stockQuantity > 0 ? `${variant.stockQuantity} 件` : "缺貨"}
                   </p>
                 </div>
-                <AddToCartButton
-                  variantId={variant.id}
-                  disabled={variant.stockQuantity <= 0}
-                />
+                <div className="flex flex-col items-end gap-2">
+                  <AddToCartButton
+                    variantId={variant.id}
+                    disabled={variant.stockQuantity <= 0}
+                  />
+                  {session?.user ? (
+                    <SubscribeButton variantId={variant.id} pets={pets} />
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>

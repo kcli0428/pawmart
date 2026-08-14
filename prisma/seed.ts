@@ -17,7 +17,7 @@ async function main() {
   const adminHash = await bcrypt.hash("admin123", 10);
   const userHash = await bcrypt.hash("demo1234", 10);
 
-  const admin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "admin@pawmart.hk" },
     update: {},
     create: {
@@ -58,7 +58,7 @@ async function main() {
     create: { name: "chicken", nameZh: "雞肉" },
   });
 
-  const grain = await prisma.allergen.upsert({
+  await prisma.allergen.upsert({
     where: { name: "grain" },
     update: {},
     create: { name: "grain", nameZh: "穀物" },
@@ -139,7 +139,11 @@ async function main() {
     include: { variants: true },
   });
 
-  const singleVariant = catProduct.variants.find((v) => v.unitType === ProductUnitType.SINGLE)!;
+  const singleVariant =
+    catProduct.variants.find((v) => v.unitType === ProductUnitType.SINGLE) ??
+    (await prisma.productVariant.findFirstOrThrow({
+      where: { productId: catProduct.id, unitType: ProductUnitType.SINGLE },
+    }));
 
   await prisma.productLot.upsert({
     where: {
@@ -154,8 +158,12 @@ async function main() {
     },
   });
 
-  await prisma.productLot.create({
-    data: {
+  await prisma.productLot.upsert({
+    where: {
+      variantId_lotNumber: { variantId: singleVariant.id, lotNumber: "LOT-2025-088" },
+    },
+    update: {},
+    create: {
       variantId: singleVariant.id,
       lotNumber: "LOT-2025-088",
       expiryDate: new Date("2026-09-15"),
@@ -163,8 +171,10 @@ async function main() {
     },
   });
 
-  const bundleVariant = await prisma.productVariant.create({
-    data: {
+  const bundleVariant = await prisma.productVariant.upsert({
+    where: { sku: "PC-CAT-MIX-6" },
+    update: {},
+    create: {
       productId: catProduct.id,
       sku: "PC-CAT-MIX-6",
       name: "混搭 6 罐組合包",
@@ -174,30 +184,122 @@ async function main() {
     },
   });
 
-  await prisma.bundleItem.create({
-    data: {
+  await prisma.bundleItem.upsert({
+    where: {
+      bundleVariantId_componentVariantId: {
+        bundleVariantId: bundleVariant.id,
+        componentVariantId: singleVariant.id,
+      },
+    },
+    update: {},
+    create: {
       bundleVariantId: bundleVariant.id,
       componentVariantId: singleVariant.id,
       quantity: 6,
     },
   });
 
-  await prisma.pet.create({
-    data: {
-      userId: demoUser.id,
-      name: "Mochi",
-      species: PetSpecies.CAT,
-      breed: "英短",
-      weightKg: 4.2,
-      lifeStage: PetLifeStage.ADULT,
-      allergies: ["穀物"],
+  const dogVariant =
+    dogProduct.variants[0] ??
+    (await prisma.productVariant.findFirstOrThrow({
+      where: { productId: dogProduct.id },
+    }));
+
+  await prisma.productLot.upsert({
+    where: {
+      variantId_lotNumber: { variantId: dogVariant.id, lotNumber: "LOT-DOG-2026-02" },
+    },
+    update: {},
+    create: {
+      variantId: dogVariant.id,
+      lotNumber: "LOT-DOG-2026-02",
+      expiryDate: new Date("2026-11-01"),
+      quantity: 45,
     },
   });
+
+  const mochi =
+    (await prisma.pet.findFirst({
+      where: { userId: demoUser.id, name: "Mochi" },
+    })) ??
+    (await prisma.pet.create({
+      data: {
+        userId: demoUser.id,
+        name: "Mochi",
+        species: PetSpecies.CAT,
+        breed: "英短",
+        weightKg: 4.2,
+        lifeStage: PetLifeStage.ADULT,
+        allergies: ["穀物"],
+        birthDate: new Date(new Date().getFullYear() - 3, new Date().getMonth(), new Date().getDate() + 3),
+      },
+    }));
+
+  const puppy =
+    (await prisma.pet.findFirst({
+      where: { userId: demoUser.id, name: "Bagel" },
+    })) ??
+    (await prisma.pet.create({
+      data: {
+        userId: demoUser.id,
+        name: "Bagel",
+        species: PetSpecies.DOG,
+        breed: "哥基",
+        weightKg: 10,
+        lifeStage: PetLifeStage.PUPPY,
+        birthDate: new Date(new Date().getFullYear() - 2, 0, 15),
+      },
+    }));
+
+  const existingSub = await prisma.subscription.findFirst({
+    where: { userId: demoUser.id, variantId: singleVariant.id },
+  });
+  if (!existingSub) {
+    const nextDeliveryAt = new Date();
+    nextDeliveryAt.setDate(nextDeliveryAt.getDate() + 3);
+    await prisma.subscription.create({
+      data: {
+        userId: demoUser.id,
+        petId: mochi.id,
+        variantId: singleVariant.id,
+        quantity: 6,
+        intervalDays: 14,
+        nextDeliveryAt,
+      },
+    });
+  }
+
+  const existingOrder = await prisma.order.findFirst({
+    where: { userId: demoUser.id, orderNumber: "PM-SEED-RUNNING-LOW" },
+  });
+  if (!existingOrder) {
+    const orderedAt = new Date();
+    orderedAt.setDate(orderedAt.getDate() - 20);
+    await prisma.order.create({
+      data: {
+        orderNumber: "PM-SEED-RUNNING-LOW",
+        userId: demoUser.id,
+        status: "PAID",
+        subtotalHkd: 19800,
+        totalHkd: 19800,
+        shippingAddress: { source: "seed" },
+        createdAt: orderedAt,
+        items: {
+          create: {
+            variantId: dogVariant.id,
+            quantity: 1,
+            priceHkd: 19800,
+          },
+        },
+      },
+    });
+  }
 
   console.log("✅ Seed complete");
   console.log("   Admin: admin@pawmart.hk / admin123");
   console.log("   Demo:  demo@pawmart.hk / demo1234");
   console.log(`   Products: ${catProduct.name}, ${dogProduct.name}`);
+  console.log(`   Pets: ${mochi.name}, ${puppy.name}`);
 }
 
 main()

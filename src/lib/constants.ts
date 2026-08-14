@@ -21,3 +21,31 @@ export const UNIT_TYPE_LABELS: Record<string, string> = {
   CASE: "整箱",
   BUNDLE: "組合包",
 };
+
+export const POINTS_TIER_LABELS: Record<string, string> = {
+  BRONZE: "青銅",
+  SILVER: "白銀",
+  GOLD: "黃金",
+  PLATINUM: "白金",
+};
+
+export const CAMPAIGN_TYPE_LABELS: Record<string, string> = {
+  REORDER: "快吃完了",
+  BIRTHDAY: "生日行銷",
+  LIFE_STAGE: "生命階段",
+};
+
+export const ORDER_STATUS_LABELS: Record<string, string> = {
+  PENDING: "待付款",
+  PAID: "已付款",
+  PROCESSING: "處理中",
+  SHIPPED: "已出貨",
+  DELIVERED: "已送達",
+  CANCELLED: "已取消",
+};
+
+export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "進行中",
+  PAUSED: "已暫停",
+  CANCELLED: "已取消",
+};

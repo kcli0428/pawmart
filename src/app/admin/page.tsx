@@ -56,6 +56,11 @@ export default async function AdminDashboardPage() {
                 批號與庫存 →
               </Link>
             </li>
+            <li>
+              <Link href="/admin/crm" className="text-amber-700 hover:underline">
+                CRM 與自動化行銷 →
+              </Link>
+            </li>
           </ul>
         </div>
 
@@ -83,13 +88,13 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="mt-8 rounded-2xl border border-dashed border-amber-200 bg-amber-50/50 p-6 text-sm text-zinc-600">
-        <p className="font-medium text-zinc-800">Phase 2–3 模組預覽</p>
+      <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6 text-sm text-zinc-600">
+        <p className="font-medium text-zinc-800">已啟用模組</p>
         <ul className="mt-2 list-inside list-disc space-y-1">
-          <li>訂閱制 / 自動定期補貨（Stripe Subscription）</li>
-          <li>「快吃完了」催購提醒（CRM 自動化）</li>
-          <li>生日與生命階段行銷</li>
-          <li>分級寵物點數獎勵</li>
+          <li>批號 FEFO 扣減、進貨入庫、到期 Alert</li>
+          <li>單罐 / 整箱 / 混搭組合包自動拆包扣庫存</li>
+          <li>訂閱制定期補貨、「快吃完了」催購、生日與生命階段行銷</li>
+          <li>分級寵物點數（青銅 → 白金）</li>
         </ul>
       </div>
     </div>
