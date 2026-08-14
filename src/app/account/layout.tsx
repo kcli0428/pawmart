@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/session";
 const LINKS = [
   { href: "/account/pets", label: "寵物檔案" },
   { href: "/account/orders", label: "訂單" },
+  { href: "/account/addresses", label: "送貨地址" },
   { href: "/account/subscriptions", label: "定期補貨" },
   { href: "/account/points", label: "寵物點數" },
 ];

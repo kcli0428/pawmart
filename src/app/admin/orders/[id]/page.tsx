@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { formatHkd } from "@/lib/utils";
 import { ORDER_STATUS_LABELS } from "@/lib/constants";
+import { formatShippingAddress } from "@/lib/addresses";
 import type { OrderStatus } from "@/generated/prisma/client";
 
 type Props = { params: Promise<{ id: string }> };
@@ -49,6 +50,11 @@ export default async function AdminOrderDetailPage({ params }: Props) {
       <p className="mt-2 text-sm text-zinc-600">
         會員：{order.user.name ?? "—"}（{order.user.email}）
       </p>
+      {formatShippingAddress(order.shippingAddress) && (
+        <p className="mt-1 text-sm text-zinc-600">
+          送貨：{formatShippingAddress(order.shippingAddress)}
+        </p>
+      )}
 
       {nextStatuses.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-2">

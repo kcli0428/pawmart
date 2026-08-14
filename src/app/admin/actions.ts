@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { generateCampaigns, markCampaignSent } from "@/lib/campaigns";
+import { generateCampaigns, sendCampaign, sendPendingCampaigns } from "@/lib/campaigns";
 import { fulfillSubscriptionOrder } from "@/lib/checkout";
-import { receiveLot } from "@/lib/inventory";
+import {
+  adjustLotQuantity,
+  receiveLot,
+  sendExpiryAlerts,
+  transferLot,
+} from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 
@@ -23,7 +28,7 @@ export async function receiveLotAction(
     return { error: "請填寫完整進貨資料" };
   }
 
-  await receiveLot({
+  const result = await receiveLot({
     variantId,
     lotNumber,
     expiryDate: new Date(expiry),
@@ -32,7 +37,78 @@ export async function receiveLotAction(
 
   revalidatePath("/admin/inventory");
   revalidatePath("/admin");
+  if (result.unpackedSingles > 0) {
+    return {
+      ok: `已入庫批號 ${lotNumber}，並拆入 ${result.unpackedSingles} 件單件庫存`,
+    };
+  }
   return { ok: `已入庫批號 ${lotNumber}` };
+}
+
+export async function adjustLotQuantityAction(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  await requireAdmin();
+  const lotId = String(formData.get("lotId") ?? "");
+  const quantity = Number(formData.get("quantity") ?? -1);
+  if (!lotId || !Number.isInteger(quantity) || quantity < 0) {
+    return { error: "請輸入有效盤點數量" };
+  }
+
+  try {
+    await adjustLotQuantity(lotId, quantity);
+  } catch (error) {
+    if (error instanceof Error && error.message === "INSUFFICIENT_STOCK") {
+      return { error: "盤點後規格庫存不可為負" };
+    }
+    throw error;
+  }
+
+  revalidatePath("/admin/inventory");
+  revalidatePath("/admin");
+  return { ok: "已更新批號數量" };
+}
+
+export async function transferLotAction(
+  _prev: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  await requireAdmin();
+  const fromLotId = String(formData.get("fromLotId") ?? "");
+  const toLotNumber = String(formData.get("toLotNumber") ?? "").trim();
+  const expiry = String(formData.get("toExpiryDate") ?? "");
+  const quantity = Number(formData.get("quantity") ?? 0);
+
+  if (!fromLotId || !toLotNumber || !expiry || quantity <= 0) {
+    return { error: "請填寫完整調撥資料" };
+  }
+
+  try {
+    await transferLot({
+      fromLotId,
+      toLotNumber,
+      toExpiryDate: new Date(expiry),
+      quantity,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INSUFFICIENT_LOT_STOCK") {
+      return { error: "來源批號數量不足" };
+    }
+    if (error instanceof Error && error.message === "SAME_LOT") {
+      return { error: "來源與目標批號不可相同" };
+    }
+    throw error;
+  }
+
+  revalidatePath("/admin/inventory");
+  return { ok: `已調撥 ${quantity} 件至批號 ${toLotNumber}` };
+}
+
+export async function sendExpiryAlertsAction(): Promise<void> {
+  await requireAdmin();
+  await sendExpiryAlerts(30);
+  revalidatePath("/admin/inventory");
 }
 
 export async function generateCampaignsAction(): Promise<void> {
@@ -41,11 +117,17 @@ export async function generateCampaignsAction(): Promise<void> {
   revalidatePath("/admin/crm");
 }
 
-export async function markCampaignSentAction(formData: FormData) {
+export async function sendCampaignAction(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  await markCampaignSent(id);
+  await sendCampaign(id);
+  revalidatePath("/admin/crm");
+}
+
+export async function sendPendingCampaignsAction(): Promise<void> {
+  await requireAdmin();
+  await sendPendingCampaigns();
   revalidatePath("/admin/crm");
 }
 

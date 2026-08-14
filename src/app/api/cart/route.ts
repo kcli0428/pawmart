@@ -1,53 +1,26 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { findOwnedCart, getOrCreateCart } from "@/lib/cart";
 import { prisma } from "@/lib/prisma";
-import { randomUUID } from "crypto";
 
-const schema = z.object({
+const addSchema = z.object({
   variantId: z.string(),
   quantity: z.number().int().positive().default(1),
 });
 
-async function getOrCreateCart(userId?: string, sessionId?: string) {
-  if (userId) {
-    return prisma.cart.upsert({
-      where: { userId },
-      create: { userId },
-      update: {},
-    });
-  }
-
-  if (!sessionId) {
-    sessionId = randomUUID();
-  }
-
-  const cart = await prisma.cart.upsert({
-    where: { sessionId },
-    create: { sessionId },
-    update: {},
-  });
-
-  return { cart, sessionId };
-}
+const patchSchema = z.object({
+  itemId: z.string(),
+  quantity: z.number().int().min(0),
+});
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const parsed = schema.safeParse(body);
+  const parsed = addSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "資料格式錯誤" }, { status: 400 });
   }
 
-  const session = await auth();
-  const cookieStore = await cookies();
-  let sessionId = cookieStore.get("cart_session")?.value;
-
-  const result = await getOrCreateCart(session?.user?.id, sessionId);
-  const cart = "cart" in result ? result.cart : result;
-  if ("sessionId" in result && result.sessionId) {
-    sessionId = result.sessionId;
-  }
+  const { cart, sessionId, isGuest } = await getOrCreateCart();
 
   await prisma.cartItem.upsert({
     where: {
@@ -67,7 +40,7 @@ export async function POST(request: Request) {
   });
 
   const response = NextResponse.json({ ok: true });
-  if (!session?.user && sessionId) {
+  if (isGuest && sessionId) {
     response.cookies.set("cart_session", sessionId, {
       httpOnly: true,
       sameSite: "lax",
@@ -75,4 +48,54 @@ export async function POST(request: Request) {
     });
   }
   return response;
+}
+
+export async function PATCH(request: Request) {
+  const body = await request.json();
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "資料格式錯誤" }, { status: 400 });
+  }
+
+  const cart = await findOwnedCart();
+  if (!cart) {
+    return NextResponse.json({ error: "購物車不存在" }, { status: 404 });
+  }
+
+  const item = await prisma.cartItem.findFirst({
+    where: { id: parsed.data.itemId, cartId: cart.id },
+  });
+  if (!item) {
+    return NextResponse.json({ error: "找不到購物車項目" }, { status: 404 });
+  }
+
+  if (parsed.data.quantity === 0) {
+    await prisma.cartItem.delete({ where: { id: item.id } });
+  } else {
+    await prisma.cartItem.update({
+      where: { id: item.id },
+      data: { quantity: parsed.data.quantity },
+    });
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(request: Request) {
+  const url = new URL(request.url);
+  const itemId = url.searchParams.get("itemId");
+  if (!itemId) {
+    return NextResponse.json({ error: "缺少項目" }, { status: 400 });
+  }
+
+  const cart = await findOwnedCart();
+  if (!cart) {
+    return NextResponse.json({ error: "購物車不存在" }, { status: 404 });
+  }
+
+  await prisma.cartItem.deleteMany({
+    where: { id: itemId, cartId: cart.id },
+  });
+
+  return NextResponse.json({ ok: true });
 }

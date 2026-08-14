@@ -295,6 +295,23 @@ async function main() {
     });
   }
 
+  const existingAddress = await prisma.address.findFirst({
+    where: { userId: demoUser.id, label: "家" },
+  });
+  if (!existingAddress) {
+    await prisma.address.create({
+      data: {
+        userId: demoUser.id,
+        label: "家",
+        recipient: "Demo 家長",
+        phone: "91234567",
+        district: "沙田",
+        address: "沙田正街 1 號 8 樓",
+        isDefault: true,
+      },
+    });
+  }
+
   console.log("✅ Seed complete");
   console.log("   Admin: admin@pawmart.hk / admin123");
   console.log("   Demo:  demo@pawmart.hk / demo1234");

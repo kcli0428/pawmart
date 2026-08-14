@@ -49,3 +49,24 @@ export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
   PAUSED: "已暫停",
   CANCELLED: "已取消",
 };
+
+export const HK_DISTRICTS = [
+  "中西區",
+  "灣仔",
+  "東區",
+  "南區",
+  "油尖旺",
+  "深水埗",
+  "九龍城",
+  "黃大仙",
+  "觀塘",
+  "葵青",
+  "荃灣",
+  "屯門",
+  "元朗",
+  "北區",
+  "大埔",
+  "沙田",
+  "西貢",
+  "離島",
+] as const;

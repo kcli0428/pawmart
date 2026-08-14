@@ -57,3 +57,30 @@ export function allocateLotsFefo(
 export function totalLotQuantity(lots: LotStock[]): number {
   return lots.reduce((sum, lot) => sum + Math.max(0, lot.quantity), 0);
 }
+
+/** CASE inbound unpacks into this many SINGLE units. */
+export function unpackedSinglesFromCases(
+  caseQty: number,
+  unitsPerCase: number,
+): number {
+  if (caseQty <= 0) {
+    throw new Error("Quantity must be positive");
+  }
+  return caseQty * Math.max(1, unitsPerCase);
+}
+
+export function lotQuantityDelta(current: number, next: number): number {
+  if (next < 0) {
+    throw new Error("LOT_QUANTITY_NEGATIVE");
+  }
+  return next - current;
+}
+
+export function assertTransferQuantity(fromQty: number, quantity: number) {
+  if (quantity <= 0) {
+    throw new Error("Quantity must be positive");
+  }
+  if (fromQty < quantity) {
+    throw new Error("INSUFFICIENT_LOT_STOCK");
+  }
+}

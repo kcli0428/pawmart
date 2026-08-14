@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PetForm } from "@/components/pets/pet-form";
+import { PetEditor } from "@/components/pets/pet-editor";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getRecommendationsForPet, estimateDailyKcal } from "@/lib/recommendations";
@@ -49,7 +50,7 @@ export default async function PetsPage() {
                     key={pet.id}
                     className="rounded-2xl border border-amber-100 bg-white p-6"
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-xl font-bold">{pet.name}</h3>
                         <p className="text-sm text-zinc-500">
@@ -71,7 +72,20 @@ export default async function PetsPage() {
                           </p>
                         )}
                       </div>
-                      <span className="text-4xl">🐾</span>
+                      <PetEditor
+                        pet={{
+                          id: pet.id,
+                          name: pet.name,
+                          species: pet.species,
+                          breed: pet.breed ?? "",
+                          weightKg: pet.weightKg,
+                          lifeStage: pet.lifeStage ?? "",
+                          allergies: pet.allergies,
+                          birthDate: pet.birthDate
+                            ? pet.birthDate.toISOString().slice(0, 10)
+                            : "",
+                        }}
+                      />
                     </div>
 
                     {recommendations.length > 0 && (

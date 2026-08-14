@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { formatHkd } from "@/lib/utils";
 import { cookies } from "next/headers";
 import { CheckoutButton } from "@/components/cart/checkout-button";
+import { CartItemControls } from "@/components/cart/cart-item-controls";
+import { getDefaultAddress } from "@/lib/addresses";
 
 async function getCartItems(userId?: string, sessionId?: string) {
   const cart = await prisma.cart.findFirst({
@@ -41,6 +43,9 @@ export default async function CartPage() {
     (sum, item) => sum + item.variant.priceHkd * item.quantity,
     0,
   );
+  const shippingAddress = session?.user
+    ? await getDefaultAddress(session.user.id)
+    : null;
 
   if (items.length === 0) {
     return (
@@ -67,8 +72,8 @@ export default async function CartPage() {
               <p className="text-sm text-zinc-500">{item.variant.name}</p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-zinc-500">× {item.quantity}</p>
-              <p className="font-semibold text-amber-700">
+              <CartItemControls itemId={item.id} quantity={item.quantity} />
+              <p className="mt-2 font-semibold text-amber-700">
                 {formatHkd(item.variant.priceHkd * item.quantity)}
               </p>
             </div>
@@ -77,6 +82,28 @@ export default async function CartPage() {
       </div>
 
       <div className="mt-8 rounded-xl bg-amber-50 p-6">
+        {session?.user && (
+          <div className="mb-4 text-sm text-zinc-600">
+            {shippingAddress ? (
+              <p>
+                送貨：{shippingAddress.recipient} · {shippingAddress.district}{" "}
+                {shippingAddress.address}
+                {" · "}
+                <Link href="/account/addresses" className="text-amber-700 hover:underline">
+                  更改
+                </Link>
+              </p>
+            ) : (
+              <p>
+                尚未設定送貨地址，結帳仍可完成示範訂單。
+                {" "}
+                <Link href="/account/addresses" className="text-amber-700 hover:underline">
+                  新增地址
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex justify-between text-lg font-bold">
           <span>合計</span>
           <span className="text-amber-700">{formatHkd(total)}</span>

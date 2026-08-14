@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { generateCampaignsAction, markCampaignSentAction, processDueSubscriptionsAction } from "@/app/admin/actions";
+import { generateCampaignsAction, processDueSubscriptionsAction, sendCampaignAction, sendPendingCampaignsAction } from "@/app/admin/actions";
 import { Button } from "@/components/ui/button";
 import {
   CAMPAIGN_TYPE_LABELS,
@@ -43,12 +43,17 @@ export default async function AdminCrmPage() {
       </Link>
       <h1 className="mt-2 text-3xl font-bold">CRM 與自動化行銷</h1>
       <p className="mt-1 text-zinc-600">
-        「快吃完了」催購、生日與生命階段行銷、訂閱到期處理
+        「快吃完了」催購、生日與生命階段行銷；未設定 RESEND_API_KEY 時改為模擬發送
       </p>
 
       <div className="mt-6 flex flex-wrap gap-3">
         <form action={generateCampaignsAction}>
           <Button type="submit">產生行銷活動</Button>
+        </form>
+        <form action={sendPendingCampaignsAction}>
+          <Button type="submit" variant="outline">
+            發送待發送電郵
+          </Button>
         </form>
         <form action={processDueSubscriptionsAction}>
           <Button type="submit" variant="outline">
@@ -155,10 +160,10 @@ export default async function AdminCrmPage() {
               <p className="mt-1 text-xs text-zinc-500">{campaign.user.email}</p>
             </div>
             {campaign.status === "PENDING" && (
-              <form action={markCampaignSentAction}>
+              <form action={sendCampaignAction}>
                 <input type="hidden" name="id" value={campaign.id} />
                 <Button type="submit" size="sm" variant="outline">
-                  標記已發送
+                  發送電郵
                 </Button>
               </form>
             )}

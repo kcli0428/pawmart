@@ -1,4 +1,5 @@
 import { OrderStatus } from "@/generated/prisma/client";
+import { getDefaultAddress, snapshotAddress } from "@/lib/addresses";
 import { deductInventory } from "@/lib/inventory";
 import { pointsFromCents, tierFromBalance } from "@/lib/points";
 import { prisma } from "@/lib/prisma";
@@ -26,6 +27,7 @@ export async function placeOrder(userId: string) {
     0,
   );
   const orderNumber = `PM-${Date.now()}`;
+  const shipping = snapshotAddress(await getDefaultAddress(userId));
 
   const order = await prisma.order.create({
     data: {
@@ -34,7 +36,7 @@ export async function placeOrder(userId: string) {
       status: OrderStatus.PENDING,
       subtotalHkd: subtotal,
       totalHkd: subtotal,
-      shippingAddress: { source: "demo-checkout" },
+      shippingAddress: shipping,
       items: {
         create: cart.items.map((item) => ({
           variantId: item.variantId,

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { allocateLotsFefo, unitsForPurchase } from "./inventory-logic";
+import {
+  allocateLotsFefo,
+  assertTransferQuantity,
+  lotQuantityDelta,
+  unitsForPurchase,
+  unpackedSinglesFromCases,
+} from "./inventory-logic";
 
 describe("unitsForPurchase", () => {
   it("returns quantity for single and bundle units", () => {
@@ -37,5 +43,34 @@ describe("allocateLotsFefo", () => {
         ),
       /INSUFFICIENT_LOT_STOCK/,
     );
+  });
+});
+
+describe("unpackedSinglesFromCases", () => {
+  it("multiplies inbound cases by units per case", () => {
+    assert.equal(unpackedSinglesFromCases(2, 12), 24);
+    assert.equal(unpackedSinglesFromCases(1, 0), 1);
+  });
+});
+
+describe("lotQuantityDelta", () => {
+  it("returns the signed adjustment to apply to variant stock", () => {
+    assert.equal(lotQuantityDelta(10, 8), -2);
+    assert.equal(lotQuantityDelta(3, 3), 0);
+  });
+
+  it("rejects negative lot quantities", () => {
+    assert.throws(() => lotQuantityDelta(4, -1), /LOT_QUANTITY_NEGATIVE/);
+  });
+});
+
+describe("assertTransferQuantity", () => {
+  it("allows transferring within available lot quantity", () => {
+    assert.doesNotThrow(() => assertTransferQuantity(10, 4));
+  });
+
+  it("rejects overdraw and non-positive quantities", () => {
+    assert.throws(() => assertTransferQuantity(2, 5), /INSUFFICIENT_LOT_STOCK/);
+    assert.throws(() => assertTransferQuantity(2, 0), /Quantity must be positive/);
   });
 });

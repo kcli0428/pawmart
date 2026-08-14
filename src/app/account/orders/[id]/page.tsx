@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { formatHkd } from "@/lib/utils";
 import { ORDER_STATUS_LABELS } from "@/lib/constants";
+import { formatShippingAddress } from "@/lib/addresses";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -33,6 +34,11 @@ export default async function OrderDetailPage({ params }: Props) {
       <p className="mt-1 text-zinc-600">
         {order.createdAt.toLocaleString("zh-HK")} · {ORDER_STATUS_LABELS[order.status]}
       </p>
+      {formatShippingAddress(order.shippingAddress) && (
+        <p className="mt-2 text-sm text-zinc-600">
+          送貨：{formatShippingAddress(order.shippingAddress)}
+        </p>
+      )}
       <div className="mt-6 space-y-3">
         {order.items.map((item) => (
           <div key={item.id} className="rounded-xl border border-amber-100 bg-white p-4">

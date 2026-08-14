@@ -101,10 +101,11 @@ export default async function AdminDashboardPage() {
       <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6 text-sm text-zinc-600">
         <p className="font-medium text-zinc-800">已啟用模組</p>
         <ul className="mt-2 list-inside list-disc space-y-1">
-          <li>批號 FEFO 扣減、進貨入庫、到期 Alert</li>
+          <li>批號 FEFO 扣減、進貨入庫（整箱自動拆單件）、盤點／調撥、到期電郵</li>
           <li>單罐 / 整箱 / 混搭組合包自動拆包扣庫存</li>
-          <li>訂閱制定期補貨、「快吃完了」催購、生日與生命階段行銷</li>
+          <li>訂閱制定期補貨、「快吃完了」催購、生日與生命階段行銷電郵</li>
           <li>分級寵物點數（青銅 → 白金）</li>
+          <li>商品 CRUD、訂單出貨、會員地址與購物車數量調整</li>
         </ul>
       </div>
     </div>

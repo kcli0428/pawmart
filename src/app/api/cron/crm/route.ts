@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { generateCampaigns } from "@/lib/campaigns";
+import { generateCampaigns, sendPendingCampaigns } from "@/lib/campaigns";
 import { fulfillSubscriptionOrder } from "@/lib/checkout";
+import { sendExpiryAlerts } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
@@ -13,6 +14,9 @@ export async function POST(request: Request) {
   }
 
   const campaignsCreated = await generateCampaigns();
+  const campaignsSent = await sendPendingCampaigns();
+  const expiryAlerts = await sendExpiryAlerts(30);
+
   const due = await prisma.subscription.findMany({
     where: { status: "ACTIVE", nextDeliveryAt: { lte: new Date() } },
   });
@@ -22,5 +26,10 @@ export async function POST(request: Request) {
     subscriptionsProcessed += 1;
   }
 
-  return NextResponse.json({ campaignsCreated, subscriptionsProcessed });
+  return NextResponse.json({
+    campaignsCreated,
+    campaignsSent,
+    subscriptionsProcessed,
+    expiryAlerts,
+  });
 }

@@ -2,9 +2,13 @@ import { ProductUnitType } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   allocateLotsFefo,
+  assertTransferQuantity,
+  lotQuantityDelta,
   totalLotQuantity,
   unitsForPurchase,
+  unpackedSinglesFromCases,
 } from "@/lib/inventory-logic";
+import { sendEmail } from "@/lib/email";
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -113,6 +117,37 @@ export async function deductInventory(
   });
 }
 
+async function upsertLot(
+  tx: Tx,
+  variantId: string,
+  lotNumber: string,
+  expiryDate: Date,
+  quantity: number,
+) {
+  return tx.productLot.upsert({
+    where: {
+      variantId_lotNumber: {
+        variantId,
+        lotNumber,
+      },
+    },
+    create: {
+      variantId,
+      lotNumber,
+      expiryDate,
+      quantity,
+    },
+    update: {
+      quantity: { increment: quantity },
+      expiryDate,
+    },
+  });
+}
+
+/**
+ * Receive inbound stock. CASE lots also unpack into SINGLE lots
+ * (same lot number / expiry, quantity × unitsPerCase).
+ */
 export async function receiveLot(input: {
   variantId: string;
   lotNumber: string;
@@ -123,32 +158,101 @@ export async function receiveLot(input: {
     throw new Error("Quantity must be positive");
   }
 
+  const lotNumber = input.lotNumber.trim();
+
   return prisma.$transaction(async (tx) => {
-    const lot = await tx.productLot.upsert({
-      where: {
-        variantId_lotNumber: {
-          variantId: input.variantId,
-          lotNumber: input.lotNumber.trim(),
-        },
-      },
-      create: {
-        variantId: input.variantId,
-        lotNumber: input.lotNumber.trim(),
-        expiryDate: input.expiryDate,
-        quantity: input.quantity,
-      },
-      update: {
-        quantity: { increment: input.quantity },
-        expiryDate: input.expiryDate,
-      },
+    const variant = await tx.productVariant.findUniqueOrThrow({
+      where: { id: input.variantId },
     });
 
+    const lot = await upsertLot(
+      tx,
+      variant.id,
+      lotNumber,
+      input.expiryDate,
+      input.quantity,
+    );
+
     await tx.productVariant.update({
-      where: { id: input.variantId },
+      where: { id: variant.id },
       data: { stockQuantity: { increment: input.quantity } },
     });
 
-    return lot;
+    let unpackedSingles = 0;
+    if (variant.unitType === ProductUnitType.CASE) {
+      const single = await findSingleVariant(tx, variant.productId);
+      unpackedSingles = unpackedSinglesFromCases(
+        input.quantity,
+        variant.unitsPerCase,
+      );
+      await upsertLot(tx, single.id, lotNumber, input.expiryDate, unpackedSingles);
+      await tx.productVariant.update({
+        where: { id: single.id },
+        data: { stockQuantity: { increment: unpackedSingles } },
+      });
+    }
+
+    return { lot, unpackedSingles };
+  });
+}
+
+export async function adjustLotQuantity(lotId: string, newQuantity: number) {
+  return prisma.$transaction(async (tx) => {
+    const lot = await tx.productLot.findUniqueOrThrow({ where: { id: lotId } });
+    const change = lotQuantityDelta(lot.quantity, newQuantity);
+    if (change === 0) return lot;
+
+    const updated = await tx.productLot.update({
+      where: { id: lotId },
+      data: { quantity: newQuantity },
+    });
+
+    await tx.productVariant.update({
+      where: { id: lot.variantId },
+      data: { stockQuantity: { increment: change } },
+    });
+
+    const variant = await tx.productVariant.findUniqueOrThrow({
+      where: { id: lot.variantId },
+    });
+    if (variant.stockQuantity < 0) {
+      throw new Error("INSUFFICIENT_STOCK");
+    }
+
+    return updated;
+  });
+}
+
+export async function transferLot(input: {
+  fromLotId: string;
+  toLotNumber: string;
+  toExpiryDate: Date;
+  quantity: number;
+}) {
+  const toLotNumber = input.toLotNumber.trim();
+
+  return prisma.$transaction(async (tx) => {
+    const from = await tx.productLot.findUniqueOrThrow({
+      where: { id: input.fromLotId },
+    });
+    assertTransferQuantity(from.quantity, input.quantity);
+
+    if (from.lotNumber === toLotNumber) {
+      throw new Error("SAME_LOT");
+    }
+
+    await tx.productLot.update({
+      where: { id: from.id },
+      data: { quantity: { decrement: input.quantity } },
+    });
+
+    await upsertLot(
+      tx,
+      from.variantId,
+      toLotNumber,
+      input.toExpiryDate,
+      input.quantity,
+    );
   });
 }
 
@@ -166,4 +270,59 @@ export async function getExpiringLots(withinDays = 30) {
     },
     orderBy: { expiryDate: "asc" },
   });
+}
+
+function expiryAlertHtml(
+  lots: Awaited<ReturnType<typeof getExpiringLots>>,
+  withinDays: number,
+) {
+  const rows = lots
+    .map(
+      (lot) =>
+        `<tr>
+          <td>${lot.variant.product.name} — ${lot.variant.name}</td>
+          <td>${lot.lotNumber}</td>
+          <td>${lot.expiryDate.toLocaleDateString("zh-HK")}</td>
+          <td>${lot.quantity}</td>
+        </tr>`,
+    )
+    .join("");
+
+  return `
+    <p>以下 ${lots.length} 個批號將於 ${withinDays} 天內到期：</p>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
+        <tr><th>商品</th><th>批號</th><th>到期日</th><th>數量</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+export async function sendExpiryAlerts(withinDays = 30) {
+  const lots = await getExpiringLots(withinDays);
+  if (lots.length === 0) {
+    return { sent: false, count: 0, simulated: false };
+  }
+
+  const adminEmail =
+    process.env.ADMIN_ALERT_EMAIL ||
+    (
+      await prisma.user.findFirst({
+        where: { role: "ADMIN" },
+        select: { email: true },
+      })
+    )?.email;
+
+  if (!adminEmail) {
+    return { sent: false, count: lots.length, simulated: false };
+  }
+
+  const result = await sendEmail({
+    to: adminEmail,
+    subject: `PawMart 到期預警：${lots.length} 筆批次`,
+    html: expiryAlertHtml(lots, withinDays),
+  });
+
+  return { sent: true, count: lots.length, simulated: result.simulated };
 }

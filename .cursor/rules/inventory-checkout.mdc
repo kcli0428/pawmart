@@ -8,7 +8,9 @@ alwaysApply: false
 
 - Unit types: `SINGLE` | `CASE` | `BUNDLE`. CASE expands with `unitsPerCase` (seed uses 12). BUNDLE expands via `BundleItem`.
 - Deduct **FEFO** (earliest `ProductLot.expiryDate` first) on the tracked SINGLE (or bundle components). Record `LotDeduction` on the order item.
-- `receiveLot` upserts lot number + expiry and increments `stockQuantity`.
+- `receiveLot` upserts lot number + expiry and increments `stockQuantity`. Receiving a **CASE** also unpacks `quantity * unitsPerCase` into the product’s SINGLE lots (same lot number / expiry) and increments SINGLE `stockQuantity`.
+- Stocktake: `adjustLotQuantity` sets lot qty and applies the delta to variant `stockQuantity` (lot ≥ 0; variant must not go negative). Transfer: `transferLot` moves qty between lots of the **same variant**; variant stock is unchanged.
+- Expiry: dashboard lists lots within 30 days; `sendExpiryAlerts` emails `ADMIN_ALERT_EMAIL` (or the first admin user) via `sendEmail`.
 - If Stripe is not configured, demo checkout may mark paid immediately. When Stripe Checkout exists: keep order `PENDING`, deduct and set `PAID` **only** in the webhook after `checkout.session.completed`.
 - On deduction failure, mark the order `CANCELLED` — do not leave a paid order with undeducted stock.
 - Award points only after a successful `PAID` order (`pointsFromCents`, then `tierFromBalance`).

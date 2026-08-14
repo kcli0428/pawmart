@@ -6,6 +6,7 @@ import {
   isRunningLow,
 } from "@/lib/crm";
 import { LIFE_STAGE_LABELS } from "@/lib/constants";
+import { campaignEmailHtml, sendEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { estimateDailyKcal } from "@/lib/recommendations";
 
@@ -196,4 +197,49 @@ export async function markCampaignSent(id: string) {
     where: { id },
     data: { status: "SENT", sentAt: new Date() },
   });
+}
+
+export async function sendCampaign(id: string) {
+  const campaign = await prisma.campaign.findUniqueOrThrow({
+    where: { id },
+    include: { user: true },
+  });
+
+  if (campaign.status === "SENT") {
+    return { simulated: false, alreadySent: true };
+  }
+
+  const result = await sendEmail({
+    to: campaign.user.email,
+    subject: campaign.title,
+    html: campaignEmailHtml(campaign.title, campaign.body),
+  });
+
+  await markCampaignSent(id);
+  return { ...result, alreadySent: false };
+}
+
+export async function sendPendingCampaigns(limit = 50) {
+  const pending = await prisma.campaign.findMany({
+    where: { status: "PENDING" },
+    include: { user: true },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+
+  let sent = 0;
+  let simulated = 0;
+
+  for (const campaign of pending) {
+    const result = await sendEmail({
+      to: campaign.user.email,
+      subject: campaign.title,
+      html: campaignEmailHtml(campaign.title, campaign.body),
+    });
+    await markCampaignSent(campaign.id);
+    sent += 1;
+    if (result.simulated) simulated += 1;
+  }
+
+  return { sent, simulated };
 }
