@@ -1,4 +1,4 @@
-import { fillProductWithGemini, geminiConfigured } from "@/lib/gemini-product";
+import { fillProductWithOpenRouter, openRouterConfigured } from "@/lib/openrouter-product";
 import { slugify } from "@/lib/utils";
 import { spawn } from "node:child_process";
 import {
@@ -371,7 +371,7 @@ export async function lookupProduct(
   ]
     .filter(Boolean)
     .join("\n");
-  const gemini = await fillProductWithGemini({
+  const aiFill = await fillProductWithOpenRouter({
     query,
     officialExcerpt: officialExcerpt || undefined,
   });
@@ -380,8 +380,8 @@ export async function lookupProduct(
     query,
     wiki?.title,
     wiki?.description,
-    gemini?.description,
-    gemini?.ingredients,
+    aiFill?.description,
+    aiFill?.ingredients,
     ...ddgHits.flatMap((hit) => [hit.title, hit.snippet]),
     ...scraped.flatMap((page) => [page.name, page.brand, page.description, page.ingredients, page.text?.slice(0, 2500)]),
   ]
@@ -391,7 +391,7 @@ export async function lookupProduct(
   const officialHasNutrition = nutritionFieldCount(officialPage?.nutrition ?? {}) >= 3;
   const nutrition = mergeNutrition(
     officialPage?.nutrition,
-    gemini?.nutrition,
+    aiFill?.nutrition,
     officialHasNutrition ? undefined : nutritionFromPage(combinedText),
   );
 
@@ -400,7 +400,7 @@ export async function lookupProduct(
   const brand = firstText(
     officialPage?.brand,
     scraped.find((page) => page.brand)?.brand,
-    gemini?.brand,
+    aiFill?.brand,
     inferBrand(query),
     inferBrand(combinedText),
   );
@@ -415,17 +415,17 @@ export async function lookupProduct(
   const ingredients = refineIngredients(
     scrapedIngredients && (looksLikeIngredientList(scrapedIngredients) || /\d+\s*%/.test(scrapedIngredients))
       ? scrapedIngredients
-      : pickIngredients([scrapedIngredients, gemini?.ingredients]),
+      : pickIngredients([scrapedIngredients, aiFill?.ingredients]),
     query,
   );
   const description = productDescription({
     query,
     ingredients,
     blurb:
-      gemini?.description ||
+      aiFill?.description ||
       inferProductBlurb(
         query,
-        [officialPage?.name, officialPage?.description, officialPage?.highlights, gemini?.description]
+        [officialPage?.name, officialPage?.description, officialPage?.highlights, aiFill?.description]
           .filter(Boolean)
           .join("\n"),
       ),
@@ -456,12 +456,12 @@ export async function lookupProduct(
   const officialCopy = [officialPage?.name, officialPage?.description, officialPage?.highlights]
     .filter(Boolean)
     .join("\n");
-  let species = inferProductSpecies(query, `${officialCopy}\n${gemini?.description ?? ""}`);
-  if (!species.length && gemini?.suitableFor.length) species = gemini.suitableFor;
-  const inferredStages = inferProductLifeStages(query, `${officialCopy}\n${gemini?.description ?? ""}`);
+  let species = inferProductSpecies(query, `${officialCopy}\n${aiFill?.description ?? ""}`);
+  if (!species.length && aiFill?.suitableFor.length) species = aiFill.suitableFor;
+  const inferredStages = inferProductLifeStages(query, `${officialCopy}\n${aiFill?.description ?? ""}`);
   const lifeStages = inferredStages.length
     ? inferredStages
-    : lifeStagesForSpecies(gemini?.lifeStages ?? [], species);
+    : lifeStagesForSpecies(aiFill?.lifeStages ?? [], species);
 
   const sources: { title: string; url: string }[] = [];
   if (officialPage) {
@@ -471,7 +471,7 @@ export async function lookupProduct(
     });
   }
   if (wiki) sources.push({ title: `Wikipedia：${wiki.title}`, url: wiki.url });
-  for (const source of gemini?.sources ?? []) {
+  for (const source of aiFill?.sources ?? []) {
     if (!sources.some((item) => item.url === source.url)) sources.push(source);
   }
   for (const hit of ddgHits.slice(0, 3)) {
@@ -513,9 +513,9 @@ export async function lookupProduct(
     sources,
     notes: [
       ingredients ? undefined : officialPage?.ingredientNote,
-      gemini ? "部分資料由 Google Gemini 根據公開搜尋補齊。" : undefined,
-      !gemini && !geminiConfigured()
-        ? "未設定 GEMINI_API_KEY，無法用 Gemini 補齊成份／營養。"
+      aiFill ? "部分資料由 OpenRouter（Gemini）根據公開搜尋補齊。" : undefined,
+      !aiFill && !openRouterConfigured()
+        ? "未設定 OPENROUTER_API_KEY，無法用 AI 補齊成份／營養。"
         : undefined,
     ].filter((note): note is string => Boolean(note)),
   };

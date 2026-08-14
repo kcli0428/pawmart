@@ -1,8 +1,8 @@
-import { LIFE_STAGE_VALUES } from "@/lib/constants";
+import { LIFE_STAGE_VALUES, SITE_NAME } from "@/lib/constants";
 import { hasRetailerCopy, isOfficialOrPublicUrl } from "@/lib/product-lookup-parse";
 import type { NutritionFacts } from "@/lib/product-lookup-parse";
 
-export type GeminiProductFill = {
+export type ProductFill = {
   brand?: string;
   description?: string;
   ingredients?: string;
@@ -15,17 +15,25 @@ export type GeminiProductFill = {
 const SPECIES = new Set(["DOG", "CAT", "BIRD", "RABBIT", "OTHER"]);
 const LIFE_STAGES = new Set<string>(LIFE_STAGE_VALUES);
 
-function geminiKey() {
-  return (
-    process.env.GEMINI_API_KEY?.trim() ||
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ||
-    process.env.GOOGLE_API_KEY?.trim() ||
-    ""
-  );
+const EXCLUDED_SEARCH_DOMAINS = [
+  "gogopet.com.hk",
+  "megapet.com.hk",
+  "hktvmall.com",
+  "openfoodfacts.org",
+  "world.openfoodfacts.org",
+  "petincharge.com",
+  "vetopia.com.hk",
+  "amazon.com",
+  "shopee.hk",
+  "lazada.com.hk",
+];
+
+function openRouterKey() {
+  return process.env.OPENROUTER_API_KEY?.trim() || "";
 }
 
-export function geminiConfigured() {
-  return geminiKey().length > 0;
+export function openRouterConfigured() {
+  return openRouterKey().length > 0;
 }
 
 function asNum(value: unknown): number | undefined {
@@ -57,11 +65,35 @@ export function extractJsonObject(raw: string): unknown {
   }
 }
 
-export function parseGeminiProductFill(
+export function citationsFromAnnotations(
+  annotations: unknown,
+  query = "",
+): { title: string; url: string }[] {
+  if (!Array.isArray(annotations)) return [];
+  return annotations
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as {
+        type?: unknown;
+        url?: unknown;
+        title?: unknown;
+        url_citation?: { url?: unknown; title?: unknown };
+      };
+      const citation = row.url_citation;
+      const url = asText(typeof citation?.url === "string" ? citation.url : row.url);
+      const title =
+        asText(typeof citation?.title === "string" ? citation.title : row.title) || url;
+      if (!url || !title || !isOfficialOrPublicUrl(url, query)) return null;
+      return { title, url };
+    })
+    .filter((item): item is { title: string; url: string } => Boolean(item));
+}
+
+export function parseProductFill(
   raw: string,
   grounding: { title: string; url: string }[] = [],
   query = "",
-): GeminiProductFill | null {
+): ProductFill | null {
   const parsed = extractJsonObject(raw);
   if (!parsed || typeof parsed !== "object") return null;
   const record = parsed as Record<string, unknown>;
@@ -104,31 +136,34 @@ export function parseGeminiProductFill(
   };
 }
 
-type GeminiResponse = {
-  candidates?: Array<{
-    content?: { parts?: Array<{ text?: string }> };
-    groundingMetadata?: {
-      groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
-    };
-  }>;
+type OpenRouterMessage = {
+  content?: unknown;
+  annotations?: unknown;
+};
+
+type OpenRouterResponse = {
+  choices?: Array<{ message?: OpenRouterMessage }>;
   error?: { message?: string };
 };
 
-function groundingSources(data: GeminiResponse): { title: string; url: string }[] {
-  const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
-  return chunks
-    .map((chunk) => {
-      const url = chunk.web?.uri?.trim();
-      const title = chunk.web?.title?.trim() || url;
-      if (!url || !title) return null;
-      return { title, url };
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && "text" in part) {
+        return String((part as { text?: unknown }).text ?? "");
+      }
+      return "";
     })
-    .filter((item): item is { title: string; url: string } => Boolean(item));
+    .join("\n");
 }
 
 function buildPrompt(query: string, officialExcerpt?: string) {
-  return `你是香港寵物食品資料助理。用 Google 搜尋公開資料，為以下商品填欄位。
+  return `你是香港寵物食品資料助理。用網上搜尋公開資料，為以下商品填欄位。
 只使用品牌官網與公開資料，禁止引用任何零售網店（包括 GoGoPet、MegaPet、HKTVmall、Pet in Charge、Vetopia）。
+禁止使用 Open Food Facts。
 描述與成份必須是繁體中文，不要出現店舖名稱或浮水印圖網址。
 不確定的數字請用 null，不要捏造。
 
@@ -154,48 +189,67 @@ function buildPrompt(query: string, officialExcerpt?: string) {
 }
 
 async function generateWithModel(model: string, prompt: string, apiKey: string) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.1 },
-      }),
-      signal: AbortSignal.timeout(20000),
+  const referer = process.env.AUTH_URL?.trim() || "https://pawmart.hk";
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": referer,
+      "X-Title": SITE_NAME,
     },
-  );
-  const data = (await res.json()) as GeminiResponse;
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [{ role: "user", content: prompt }],
+      tools: [
+        {
+          type: "openrouter:web_search",
+          parameters: {
+            engine: "auto",
+            max_results: 8,
+            max_uses: 2,
+            excluded_domains: EXCLUDED_SEARCH_DOMAINS,
+          },
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = (await res.json()) as OpenRouterResponse;
   if (!res.ok) {
-    throw new Error(data.error?.message || `Gemini ${model} ${res.status}`);
+    throw new Error(data.error?.message || `OpenRouter ${model} ${res.status}`);
   }
-  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("\n") ?? "";
-  return { text, grounding: groundingSources(data) };
+  const message = data.choices?.[0]?.message;
+  return {
+    text: messageText(message?.content),
+    annotations: message?.annotations,
+  };
 }
 
-export async function fillProductWithGemini(input: {
+export async function fillProductWithOpenRouter(input: {
   query: string;
   officialExcerpt?: string;
-}): Promise<GeminiProductFill | null> {
-  const apiKey = geminiKey();
+}): Promise<ProductFill | null> {
+  const apiKey = openRouterKey();
   if (!apiKey) return null;
 
   const prompt = buildPrompt(input.query, input.officialExcerpt);
   const models = [
-    process.env.GEMINI_MODEL?.trim(),
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    process.env.OPENROUTER_MODEL?.trim(),
+    "google/gemini-2.5-flash",
+    "google/gemini-2.0-flash-001",
   ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
 
   for (const model of models) {
     try {
-      const { text, grounding } = await generateWithModel(model, prompt, apiKey);
-      const parsed = parseGeminiProductFill(text, grounding, input.query);
+      const { text, annotations } = await generateWithModel(model, prompt, apiKey);
+      const parsed = parseProductFill(
+        text,
+        citationsFromAnnotations(annotations, input.query),
+        input.query,
+      );
       if (parsed) return parsed;
     } catch {
       continue;

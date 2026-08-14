@@ -14,7 +14,7 @@ Next.js 全端 + PostgreSQL + Prisma 打造的寵物用品網店。
 - 訂閱制定期補貨（14 / 30 / 60 天）
 
 ### 後台 — 供應鏈與營運
-- 商品／規格 CRUD；新增商品可「智能填入」（品牌官網 + Google Gemini 補齊成份／營養）
+- 商品／規格 CRUD；新增商品可「智能填入」（品牌官網 + OpenRouter / Gemini 補齊成份／營養）
 - 進貨入庫（批號 Lot Number + 有效期限）；整箱入庫自動拆入單件批號
 - 盤點（調整批號數量）與批號調撥
 - 結帳 FEFO 扣減（先到期先出），訂單可見批號
@@ -100,9 +100,9 @@ src/
 
 設定 `RESEND_API_KEY`、`EMAIL_FROM`、`ADMIN_ALERT_EMAIL` 後，CRM 活動與到期預警會經 Resend 寄出。未設定金鑰時，系統會在伺服器 log 模擬發送，並仍將活動標記為已發送。
 
-## Google Gemini（商品智能填入）
+## OpenRouter（商品智能填入）
 
-後台「搜尋並填入」會先讀品牌官網與 Wikipedia。缺漏的成份、保證分析與說明會呼叫 Google Gemini（含 Google 搜尋）補齊，**不會**使用 Open Food Facts 或零售網店。請在 `.env` 設定 `GEMINI_API_KEY`（可向 [Google AI Studio](https://aistudio.google.com/apikey) 申請）。未設定時仍可搜尋官網，但無法自動補齊缺漏欄位。
+後台「搜尋並填入」會先讀品牌官網與 Wikipedia。缺漏的成份、保證分析與說明會經 [OpenRouter](https://openrouter.ai) 呼叫 Gemini（含網上搜尋）補齊，**不會**使用 Open Food Facts 或零售網店。請在 `.env` 設定 `OPENROUTER_API_KEY`（可向 [OpenRouter Keys](https://openrouter.ai/keys) 申請）。未設定時仍可搜尋官網，但無法自動補齊缺漏欄位。
 
 ## 開發指令
 

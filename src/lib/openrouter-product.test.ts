@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { extractJsonObject, parseGeminiProductFill } from "./gemini-product";
+import {
+  citationsFromAnnotations,
+  extractJsonObject,
+  parseProductFill,
+} from "./openrouter-product";
 
-describe("parseGeminiProductFill", () => {
+describe("parseProductFill", () => {
   it("reads fenced JSON and drops retailer copy", () => {
     const raw = `\`\`\`json
 {
@@ -22,7 +26,7 @@ describe("parseGeminiProductFill", () => {
   ]
 }
 \`\`\``;
-    const parsed = parseGeminiProductFill(raw);
+    const parsed = parseProductFill(raw);
     assert.equal(parsed?.brand, "Astkatta");
     assert.match(parsed?.description ?? "", /腎貓/);
     assert.match(parsed?.ingredients ?? "", /雞肉 39\.5%/);
@@ -34,7 +38,7 @@ describe("parseGeminiProductFill", () => {
   });
 
   it("rejects retailer shop names in description", () => {
-    const parsed = parseGeminiProductFill(
+    const parsed = parseProductFill(
       JSON.stringify({
         description: "GoGoPet 有售的腎臟主食包",
         ingredients: "雞肉",
@@ -45,6 +49,30 @@ describe("parseGeminiProductFill", () => {
 
   it("returns null for empty text", () => {
     assert.equal(extractJsonObject("no json here"), null);
-    assert.equal(parseGeminiProductFill("sorry"), null);
+    assert.equal(parseProductFill("sorry"), null);
+  });
+
+  it("keeps official OpenRouter citations and drops Open Food Facts", () => {
+    const sources = citationsFromAnnotations(
+      [
+        {
+          type: "url_citation",
+          url_citation: {
+            title: "Kidney Care",
+            url: "https://www.astkatta.com/kidney-care-series",
+          },
+        },
+        {
+          type: "url_citation",
+          url_citation: {
+            title: "OFF",
+            url: "https://world.openfoodfacts.org/product/123",
+          },
+        },
+      ],
+      "Astkatta Kidney Care",
+    );
+    assert.equal(sources.length, 1);
+    assert.match(sources[0]?.url ?? "", /astkatta\.com/);
   });
 });
