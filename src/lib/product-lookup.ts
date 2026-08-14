@@ -513,9 +513,12 @@ export async function lookupProduct(
     sources,
     notes: [
       ingredients ? undefined : officialPage?.ingredientNote,
-      aiFill ? "部分資料由 OpenRouter（Gemini）根據公開搜尋補齊。" : undefined,
+      aiFill ? "部分資料由 OpenRouter 根據公開資料補齊。" : undefined,
       !aiFill && !openRouterConfigured()
         ? "未設定 OPENROUTER_API_KEY，無法用 AI 補齊成份／營養。"
+        : undefined,
+      !aiFill && openRouterConfigured()
+        ? "OpenRouter 未能補齊成份／營養（模型逾時、額度不足或上游暫時錯誤）。"
         : undefined,
     ].filter((note): note is string => Boolean(note)),
   };

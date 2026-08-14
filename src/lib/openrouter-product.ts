@@ -143,7 +143,7 @@ type OpenRouterMessage = {
 
 type OpenRouterResponse = {
   choices?: Array<{ message?: OpenRouterMessage }>;
-  error?: { message?: string };
+  error?: { message?: string; code?: number | string };
 };
 
 function messageText(content: unknown): string {
@@ -188,44 +188,91 @@ function buildPrompt(query: string, officialExcerpt?: string) {
 }`;
 }
 
-async function generateWithModel(model: string, prompt: string, apiKey: string) {
-  const referer = process.env.AUTH_URL?.trim() || "https://pawmart.hk";
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": referer,
-      "X-Title": SITE_NAME,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-      messages: [{ role: "user", content: prompt }],
-      tools: [
-        {
-          type: "openrouter:web_search",
-          parameters: {
-            engine: "auto",
-            max_results: 8,
-            max_uses: 2,
-            excluded_domains: EXCLUDED_SEARCH_DOMAINS,
-          },
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-  const data = (await res.json()) as OpenRouterResponse;
-  if (!res.ok) {
-    throw new Error(data.error?.message || `OpenRouter ${model} ${res.status}`);
+function isFreeModel(model: string) {
+  return /:free\b|\/free$/i.test(model);
+}
+
+function requestAttempts(model: string): Array<{ tools: boolean; json: boolean }> {
+  if (isFreeModel(model)) {
+    return [{ tools: false, json: true }];
   }
-  const message = data.choices?.[0]?.message;
-  return {
-    text: messageText(message?.content),
-    annotations: message?.annotations,
-  };
+  return [
+    { tools: true, json: true },
+    { tools: false, json: true },
+  ];
+}
+
+async function generateWithModel(
+  model: string,
+  prompt: string,
+  apiKey: string,
+  options: { tools: boolean; json: boolean },
+) {
+  const referer = process.env.AUTH_URL?.trim() || "https://pawmart.hk";
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": referer,
+          "X-Title": SITE_NAME,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.1,
+          ...(options.json ? { response_format: { type: "json_object" } } : {}),
+          messages: [{ role: "user", content: prompt }],
+          ...(options.tools
+            ? {
+                tools: [
+                  {
+                    type: "openrouter:web_search",
+                    parameters: {
+                      engine: "auto",
+                      max_results: 8,
+                      max_uses: 2,
+                      excluded_domains: EXCLUDED_SEARCH_DOMAINS,
+                    },
+                  },
+                ],
+              }
+            : {}),
+        }),
+        signal: AbortSignal.timeout(35000),
+      });
+      const data = (await res.json()) as OpenRouterResponse;
+      const transient =
+        data.error?.code === 502 ||
+        data.error?.code === 503 ||
+        /internal server error|temporarily|overloaded/i.test(data.error?.message ?? "");
+      if (transient && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        lastError = new Error(data.error?.message || `OpenRouter ${model} ${res.status}`);
+        continue;
+      }
+      if (!res.ok || data.error) {
+        throw new Error(data.error?.message || `OpenRouter ${model} ${res.status}`);
+      }
+      const message = data.choices?.[0]?.message;
+      const text = messageText(message?.content);
+      if (!text.trim()) throw new Error(`OpenRouter ${model} returned empty content`);
+      return {
+        text,
+        annotations: message?.annotations,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const timeout = lastError.name === "TimeoutError" || /aborted due to timeout/i.test(lastError.message);
+      if (timeout || attempt >= 2) throw lastError;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+  }
+
+  throw lastError ?? new Error(`OpenRouter ${model} failed`);
 }
 
 export async function fillProductWithOpenRouter(input: {
@@ -236,23 +283,27 @@ export async function fillProductWithOpenRouter(input: {
   if (!apiKey) return null;
 
   const prompt = buildPrompt(input.query, input.officialExcerpt);
+  const configured = process.env.OPENROUTER_MODEL?.trim();
   const models = [
-    process.env.OPENROUTER_MODEL?.trim(),
-    "google/gemini-2.5-flash",
-    "google/gemini-2.0-flash-001",
+    configured,
+    ...(configured && isFreeModel(configured)
+      ? []
+      : ["google/gemini-2.5-flash", "google/gemini-flash-1.5"]),
   ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
 
   for (const model of models) {
-    try {
-      const { text, annotations } = await generateWithModel(model, prompt, apiKey);
-      const parsed = parseProductFill(
-        text,
-        citationsFromAnnotations(annotations, input.query),
-        input.query,
-      );
-      if (parsed) return parsed;
-    } catch {
-      continue;
+    for (const attempt of requestAttempts(model)) {
+      try {
+        const { text, annotations } = await generateWithModel(model, prompt, apiKey, attempt);
+        const parsed = parseProductFill(
+          text,
+          citationsFromAnnotations(annotations, input.query),
+          input.query,
+        );
+        if (parsed) return parsed;
+      } catch {
+        continue;
+      }
     }
   }
   return null;
