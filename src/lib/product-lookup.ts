@@ -24,6 +24,7 @@ import {
   isCatalogNoise,
   isClipartIngredientLabel,
   isGenericBrandCopy,
+  isLikelyAdOrLogoImage,
   looksLikeIngredientList,
   nutritionFromPage,
   pickIngredients,
@@ -280,7 +281,10 @@ async function scrapeProductPage(url: string, query: string) {
     brand: jsonLd.brand,
     description: jsonLd.description || og.description,
     imageUrl:
-      pickProductImage(images, query) || jsonLd.imageUrl || og.imageUrl,
+      pickProductImage(images, query) ||
+      [jsonLd.imageUrl, og.imageUrl].find(
+        (url) => url && !isLikelyAdOrLogoImage(url) && pickProductImage([{ url, alt: url, width: 400 }], query),
+      ),
     priceHkdDollars: jsonLd.priceHkdDollars || extractHkdPrice(text),
     ingredients,
     ingredientNote,
@@ -441,20 +445,19 @@ export async function lookupProduct(
   });
   const imageUrl = firstText(
     officialPage?.imageUrl,
-    scraped.find((page) => page.imageUrl)?.imageUrl,
-    off?.imageUrl,
-    wiki?.imageUrl,
+    rankedForCopy.find((page) => page.imageUrl && !isLikelyAdOrLogoImage(page.imageUrl, page.name ?? ""))
+      ?.imageUrl,
   );
+  const queryWeight = extractWeightLabel(query);
+  const packSizes = queryWeight
+    ? [queryWeight]
+    : (officialPage?.packSizes?.slice(0, 1) ?? extractPackSizes(query).slice(0, 1));
+  const weight = packSizes[0] ?? extractWeightLabel(`${query} ${name}`);
   const priceDollars = firstText(
     officialPage?.priceHkdDollars,
-    scraped.find((page) => page.priceHkdDollars)?.priceHkdDollars,
-    extractHkdPrice(combinedText),
+    rankedForCopy.find((page) => page.priceHkdDollars)?.priceHkdDollars,
+    extractHkdPrice(`${query}\n${officialPage?.text?.slice(0, 2000) ?? ""}`),
   );
-  const packSizes =
-    officialPage?.packSizes?.length
-      ? officialPage.packSizes
-      : extractPackSizes(`${query} ${combinedText}`);
-  const weight = packSizes[0] ?? extractWeightLabel(`${query} ${name} ${combinedText}`);
   const species = inferProductSpecies(
     query,
     [officialPage?.name, officialPage?.description, officialPage?.highlights].filter(Boolean).join("\n"),

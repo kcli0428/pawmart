@@ -128,29 +128,16 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
       if (current.some((item) => item.id)) {
         return current;
       }
-      if (result.packSizes.length > 0) {
-        return result.packSizes.map((size, index) => ({
-          sku:
-            index === 0
-              ? result.variantSku
-              : `${result.variantSku}-${size.toUpperCase()}`,
-          name: `${size} 裝`,
-          unitType: "SINGLE",
-          unitsPerCase: 1,
-          priceDollars: index === 0 ? result.priceDollars : "",
+      const first = current[0] ?? emptyVariant();
+      return [
+        {
+          ...first,
+          sku: first.sku || result.variantSku,
+          name: first.name || result.variantName,
+          priceDollars: first.priceDollars || result.priceDollars,
           isActive: true,
-        }));
-      }
-      const next = [...current];
-      if (!next[0]) next[0] = emptyVariant();
-      next[0] = {
-        ...next[0],
-        sku: next[0].sku || result.variantSku,
-        name: next[0].name || result.variantName,
-        priceDollars: next[0].priceDollars || result.priceDollars,
-        isActive: true,
-      };
-      return next;
+        },
+      ];
     });
     setSources(result.sources);
   }

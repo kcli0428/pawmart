@@ -263,6 +263,33 @@ describe("nutrition and inference", () => {
     );
     assert.match(picked ?? "", /w_1200/);
     assert.match(picked ?? "", /abc/);
+    const kidneyQuery = "Astkatta冰島Kidney Care腎臟主食包-雞肉絲清湯（50g）";
+    const kidneyPicked = pickProductImage(
+      [
+        {
+          url: "https://www.gogopet.com.hk/wp-content/uploads/2023/05/cropped-GoGoPet_SB.jpg",
+          alt: "GoGoPet development limited",
+          width: 1000,
+        },
+        {
+          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/ad-banner.jpg",
+          alt: "Shop promo banner",
+          width: 1200,
+        },
+        {
+          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/tuna-pottage.jpg",
+          alt: "Astkatta 冰島腎臟主食包 - 吞拿魚濃湯 50g",
+          width: 300,
+        },
+        {
+          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/chicken-soup.jpg",
+          alt: "Astkatta 冰島腎臟主食包 - Kidney Care Complete Food - 雞肉絲清湯 50g",
+          width: 300,
+        },
+      ],
+      kidneyQuery,
+    );
+    assert.match(kidneyPicked ?? "", /chicken-soup/);
   });
 
   it("ranks mackerel mousse above other Astkatta recipes", () => {

@@ -199,23 +199,39 @@ export function pickProductImage(images: HtmlImage[], query: string): string | u
   const ranked = images
     .map((image) => {
       const hay = `${image.alt} ${image.url}`.toLowerCase();
-      let score = image.width / 25;
-      if (/instagram|facebook|logo|favicon|sprite|icon|pixel/.test(hay)) score -= 80;
+      let score = Math.min(image.width || 0, 640) / 40;
+      if (
+        /instagram|facebook|logo|favicon|sprite|icon|pixel|banner|promo|advert|adservice|doubleclick|sponsor|whatsapp|share|badge|cropped-|header|slider/.test(
+          hay,
+        )
+      ) {
+        score -= 80;
+      }
+      if (/gogopet|petincharge|petpet|shop|store|development limited/.test(hay) && !/astkatta|ziwi|royal/.test(hay)) {
+        score -= 50;
+      }
       if (image.width > 0 && image.width < 160) score -= 25;
       if (/\.svg($|\?)/i.test(image.url)) score -= 20;
-      if (/\.jpe?g($|\?)/i.test(image.url) || /\.jpe?g["']/i.test(image.alt)) score += 12;
-      if (/mousse|pack|can|pouch|bag|product|配方|貓糧|狗糧/.test(hay)) score += 24;
-      if (/mackerel|鯖魚|ziwi|astkatta|royal/.test(hay)) score += 10;
+      if (/\.jpe?g($|\?)/i.test(image.url) || /\.jpe?g["']/i.test(image.alt)) score += 8;
+      if (/mousse|pack|can|pouch|bag|配方|貓糧|狗糧|主食|wet|湯/.test(hay)) score += 16;
+      if (/mackerel|鯖魚|ziwi|astkatta|royal/.test(hay)) score += 12;
       if (/mackerel\.png|ingredient|clipart/.test(hay) && image.width < 500) score -= 20;
-      if (q.split(/\s+/).some((token) => token.length >= 4 && hay.includes(token.toLowerCase()))) {
-        score += 6;
-      }
+      score += queryOverlapScore(hay, query);
+      if (/清湯/.test(q) && /濃湯|pottage/.test(hay) && !/清湯/.test(hay)) score -= 32;
+      if (/雞肉/.test(q) && /吞拿|tuna/.test(hay) && !/雞肉|chicken/.test(hay)) score -= 32;
       return { ...image, score };
     })
     .filter((image) => image.score > 0)
     .sort((a, b) => b.score - a.score);
   const best = ranked[0];
   return best ? normalizeCdnImageUrl(best.url) : undefined;
+}
+
+export function isLikelyAdOrLogoImage(url: string, alt = ""): boolean {
+  const hay = `${alt} ${url}`.toLowerCase();
+  return /logo|favicon|banner|sprite|\bicon\b|advert|doubleclick|cropped-|header|slider|badge|adservice/.test(
+    hay,
+  );
 }
 
 export function extractIngredientImageUrls(html: string): string[] {
