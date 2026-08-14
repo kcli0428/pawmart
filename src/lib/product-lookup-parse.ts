@@ -137,29 +137,101 @@ export function extractJsonLdProduct(html: string): ParsedProductPage {
   return {};
 }
 
-export function extractNutrition(text: string) {
+export type NutritionFacts = {
+  proteinPct?: number;
+  fatPct?: number;
+  fiberPct?: number;
+  moisturePct?: number;
+  ashPct?: number;
+  taurinePct?: number;
+  kcalPer100g?: number;
+  chondroitinMgPerKg?: number;
+  glucosamineMgPerKg?: number;
+};
+
+function parseLocaleNumber(raw: string) {
+  const n = Number(raw.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export function htmlToPlainText(html: string) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|tr|h6)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+export function extractIngredients(text: string): string | undefined {
+  const match =
+    text.match(/主要成[份分][：:]\s*([\s\S]{8,800}?)(?:營養分析|保證分析|粗蛋白質|卡路里|$)/i) ||
+    text.match(/ingredients?[：:]\s*([\s\S]{8,800}?)(?:guaranteed analysis|crude protein|$)/i);
+  const value = match?.[1]?.replace(/\s+/g, " ").trim().replace(/[。.;；]+$/, "");
+  return value || undefined;
+}
+
+export function extractNutrition(text: string): NutritionFacts {
   const numberAfter = (labels: string[]) => {
     for (const label of labels) {
-      const re = new RegExp(`${label}[^\\d%]{0,12}([\\d.]+)\\s*%?`, "i");
+      const re = new RegExp(`${label}[^\\d%]{0,16}([\\d,.]+)\\s*%?`, "i");
       const match = text.match(re);
-      if (match) return Number(match[1]);
+      if (match) return parseLocaleNumber(match[1]);
     }
     return undefined;
   };
 
-  const proteinPct = numberAfter(["蛋白質", "crude protein", "protein"]);
-  const fatPct = numberAfter(["脂肪", "crude fat", "fat"]);
-  const fiberPct = numberAfter(["纖維", "crude fiber", "fibre", "fiber"]);
-  const kcalMatch = text.match(
-    /(?:kcal(?:\/|每)?\s*100\s*g|熱量)[^\d]{0,12}([\d.]+)/i,
+  const mgPerKgAfter = (labels: string[]) => {
+    for (const label of labels) {
+      const re = new RegExp(`${label}[^\\d]{0,16}([\\d,]+)\\s*mg\\s*/\\s*kg`, "i");
+      const match = text.match(re);
+      if (match) return parseLocaleNumber(match[1]);
+    }
+    return undefined;
+  };
+
+  const proteinPct = numberAfter(["粗蛋白質", "crude protein", "蛋白質"]);
+  const fatPct = numberAfter(["粗脂肪", "crude fat", "脂肪"]);
+  const fiberPct = numberAfter(["粗纖維", "crude fiber", "crude fibre", "纖維"]);
+  const moisturePct = numberAfter(["水份", "水分", "moisture"]);
+  const ashPct = numberAfter(["灰質", "ash"]);
+  const taurinePct = numberAfter(["牛磺酸", "taurine"]);
+  const chondroitinMgPerKg = mgPerKgAfter(["硫酸軟骨素", "chondroitin"]);
+  const glucosamineMgPerKg = mgPerKgAfter(["葡萄糖胺", "glucosamine"]);
+
+  const kcal100 = text.match(
+    /(?:kcal(?:\/|每)?\s*100\s*g|熱量(?:\/|每)?\s*100\s*g)[^\d]{0,12}([\d,.]+)/i,
   );
-  const kcalPer100g = kcalMatch ? Number(kcalMatch[1]) : undefined;
+  const kcalKg =
+    text.match(/(?:卡路里(?:含量)?|熱量|ME)\s*[=:]?\s*([\d,]+)\s*千卡\s*\/\s*公斤/i) ||
+    text.match(/([\d,]+)\s*kcal\s*\/\s*kg/i);
+
+  let kcalPer100g = kcal100 ? parseLocaleNumber(kcal100[1]) : undefined;
+  if (kcalPer100g == null && kcalKg) {
+    const perKg = parseLocaleNumber(kcalKg[1]);
+    if (perKg) kcalPer100g = Math.round(perKg / 10);
+  }
 
   return {
-    proteinPct: Number.isFinite(proteinPct) ? proteinPct : undefined,
-    fatPct: Number.isFinite(fatPct) ? fatPct : undefined,
-    fiberPct: Number.isFinite(fiberPct) ? fiberPct : undefined,
-    kcalPer100g: Number.isFinite(kcalPer100g) ? kcalPer100g : undefined,
+    proteinPct,
+    fatPct,
+    fiberPct,
+    moisturePct,
+    ashPct,
+    taurinePct,
+    kcalPer100g,
+    chondroitinMgPerKg,
+    glucosamineMgPerKg,
   };
 }
 
@@ -174,9 +246,30 @@ export function extractHkdPrice(text: string): string | undefined {
 }
 
 export function extractWeightLabel(text: string): string | undefined {
-  const match = text.match(/(\d+(?:\.\d+)?)\s*(kg|g|磅|lb)/i);
+  return extractPackSizes(text)[0];
+}
+
+export function extractPackSizes(text: string): string[] {
+  const sizes: string[] = [];
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*(kg|g)\b/gi)) {
+    const amount = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const before = text.slice(Math.max(0, (match.index ?? 0) - 12), match.index ?? 0);
+    if (/\/|每|kcal|熱量/i.test(before) && amount === 100) continue;
+    if (unit === "g" && (amount < 20 || amount > 20000)) continue;
+    if (unit === "kg" && (amount <= 0 || amount > 30)) continue;
+    const label = `${match[1]}${unit}`;
+    if (!sizes.includes(label)) sizes.push(label);
+  }
+  return sizes.slice(0, 4);
+}
+
+export function gramsFromLabel(text: string): number | undefined {
+  const match = text.match(/(\d+(?:\.\d+)?)\s*(kg|g)\b/i);
   if (!match) return undefined;
-  return `${match[1]}${match[2].toLowerCase()}`;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return undefined;
+  return match[2].toLowerCase() === "kg" ? Math.round(amount * 1000) : Math.round(amount);
 }
 
 export function inferSpecies(text: string): string[] {
@@ -220,19 +313,31 @@ export function inferAllergenIds(
 }
 
 export function inferCategoryId(
-  text: string,
+  query: string,
+  extraText: string,
   categories: { id: string; name: string; slug?: string }[],
 ): string | undefined {
-  const value = text.toLowerCase();
+  const q = query.toLowerCase();
+  const extra = extraText.toLowerCase();
+  const queryWantsCat = /貓糧|貓用|幼貓|成貓|feline|cat\s*food|\bcats?\b/.test(q);
+  const queryWantsDog = /狗糧|犬用|幼犬|成犬|canine|dog\s*food|\bdogs?\b/.test(q);
+
   const scored = categories
     .map((category) => {
-      const hay = `${category.name} ${category.slug ?? ""}`.toLowerCase();
+      const name = category.name.toLowerCase();
+      const slug = (category.slug ?? "").toLowerCase();
+      const isCat = /貓|cat/.test(`${name} ${slug}`);
+      const isDog = /狗|犬|dog/.test(`${name} ${slug}`);
       let score = 0;
-      if (hay && value.includes(category.name.toLowerCase())) score += 5;
-      if (category.slug && value.includes(category.slug.toLowerCase())) score += 3;
-      if (/貓/.test(category.name) && /貓|cat|kitten/.test(value)) score += 2;
-      if (/狗/.test(category.name) && /狗|犬|dog|puppy/.test(value)) score += 2;
-      if (/糧|food/.test(hay) && /糧|food|kibble|diet/.test(value)) score += 1;
+      if (q.includes(name) && name.length >= 2) score += 30;
+      if (slug && q.includes(slug.replace(/-/g, " "))) score += 8;
+      if (isCat && queryWantsCat) score += 20;
+      if (isDog && queryWantsDog) score += 20;
+      if (isCat && queryWantsCat && !queryWantsDog) score += 12;
+      if (isDog && queryWantsDog && !queryWantsCat) score += 12;
+      if (isCat && queryWantsDog && !queryWantsCat) score -= 25;
+      if (isDog && queryWantsCat && !queryWantsDog) score -= 25;
+      if (extra.includes(name) && name.length >= 2) score += 2;
       return { id: category.id, score };
     })
     .filter((item) => item.score > 0)
@@ -241,6 +346,7 @@ export function inferCategoryId(
 }
 
 export const KNOWN_BRANDS = [
+  "Ziwi Peak",
   "Royal Canin",
   "Hill's",
   "Hills",
@@ -274,6 +380,88 @@ export function inferBrand(text: string): string | undefined {
   return found;
 }
 
+export function extractUrlsFromQuery(query: string): string[] {
+  return [...query.matchAll(/https?:\/\/[^\s<>"']+/gi)].map((match) =>
+    match[0].replace(/[),.;]+$/g, ""),
+  );
+}
+
+export function extractSitemapLocs(xml: string): string[] {
+  return [...xml.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/gi)].map((match) =>
+    decodeURIComponent(match[1].trim()),
+  );
+}
+
+const URL_QUERY_HINTS: Array<{ test: RegExp; tokens: string[]; weight?: number }> = [
+  { test: /貓糧|貓用|幼貓|成貓|feline|cat\s*food|\bcats?\b/i, tokens: ["catfood", "cat-food"] },
+  { test: /狗糧|犬用|幼犬|成犬|canine|dog\s*food|\bdogs?\b/i, tokens: ["dogfood", "dog-food"] },
+  { test: /風乾|air[\s-]?dried/i, tokens: ["airdried", "air-dried"] },
+  { test: /罐頭|wet|canned/i, tokens: ["canned", "wet"] },
+  { test: /鯖魚|mackerel/i, tokens: ["mackerel", "marckerel", "markerel"] },
+  { test: /羊肉|lamb/i, tokens: ["lamb"] },
+  { test: /雞肉|chicken/i, tokens: ["chicken"] },
+  { test: /牛肉|beef/i, tokens: ["beef"] },
+  { test: /鹿肉|venison/i, tokens: ["venison"] },
+  { test: /草胃|tripe/i, tokens: ["tripe"] },
+];
+
+export function scoreProductUrl(url: string, query: string): number {
+  let path = url.toLowerCase();
+  try {
+    path = decodeURIComponent(new URL(url).pathname).toLowerCase();
+  } catch {
+    /* keep raw */
+  }
+
+  let score = 0;
+  for (const hint of URL_QUERY_HINTS) {
+    if (!hint.test.test(query)) continue;
+    if (hint.tokens.some((token) => path.includes(token))) {
+      score += hint.weight ?? 8;
+    }
+  }
+  for (const token of query.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
+    if (path.includes(token)) score += 6;
+  }
+  if (/貓糧|貓用|幼貓|成貓|feline|cat\s*food|\bcats?\b/i.test(query) && /dogfood|dog-food/.test(path)) {
+    score -= 24;
+  }
+  if (/狗糧|犬用|幼犬|成犬|canine|dog\s*food|\bdogs?\b/i.test(query) && /catfood|cat-food/.test(path)) {
+    score -= 24;
+  }
+  if (path === "/" || path === "") score -= 8;
+  return score;
+}
+
+export function rankUrlsForQuery(urls: string[], query: string): string[] {
+  return [...new Set(urls)]
+    .map((url) => ({ url, score: scoreProductUrl(url, query) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.url);
+}
+
+export function isGenericBrandCopy(text: string, query: string): boolean {
+  const mentionsBothSpecies = /貓糧/.test(text) && /狗糧/.test(text);
+  const queryIsSpecific = /配方|鯖魚|羊肉|雞肉|牛肉|鹿肉|風乾/.test(query);
+  return mentionsBothSpecies && queryIsSpecific;
+}
+
+export function slugFromProductUrl(url: string): string {
+  try {
+    const path = decodeURIComponent(new URL(url).pathname).replace(/\/+$/, "");
+    const last = path.split("/").filter(Boolean).pop() ?? "";
+    if (!last || last === "www") return "";
+    return last
+      .toLowerCase()
+      .replace(/[^\w]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80);
+  } catch {
+    return "";
+  }
+}
+
 export function preferOfficialHits(hits: SearchHit[], query: string): SearchHit[] {
   const q = query.toLowerCase();
   const brand = inferBrand(query)?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
@@ -291,6 +479,7 @@ export function preferOfficialHits(hits: SearchHit[], query: string): SearchHit[
     if (host.includes("openfoodfacts.org")) value += 8;
     if (brand && host.replace(/[^a-z0-9]+/g, "").includes(brand)) value += 10;
     if (/royalcanin|hillspet|purina|orijen|acana|ziwipets/.test(host)) value += 8;
+    value += scoreProductUrl(hit.url, query);
     if (/hktvmall|price\.com\.hk|pethome|petcity/.test(host)) value += 4;
     if (/amazon|facebook|youtube|instagram/.test(host)) value -= 4;
     if (hit.title.toLowerCase().includes(q.slice(0, 12))) value += 2;
@@ -312,11 +501,18 @@ export type ProductLookupResult = {
   fatPct: string;
   fiberPct: string;
   kcalPer100g: string;
+  moisturePct: string;
+  ashPct: string;
+  taurinePct: string;
+  chondroitinMgPerKg: string;
+  glucosamineMgPerKg: string;
+  ingredients: string;
   suitableFor: string[];
   lifeStages: string[];
   allergenIds: string[];
   variantSku: string;
   variantName: string;
+  packSizes: string[];
   priceDollars: string;
   sources: { title: string; url: string }[];
 };

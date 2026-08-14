@@ -37,7 +37,13 @@ type ProductFormProps = {
     proteinPct: number | null;
     fatPct: number | null;
     fiberPct: number | null;
+    moisturePct: number | null;
+    ashPct: number | null;
+    taurinePct: number | null;
     kcalPer100g: number | null;
+    chondroitinMgPerKg: number | null;
+    glucosamineMgPerKg: number | null;
+    ingredients: string | null;
     suitableFor: string[];
     lifeStages: string[];
     allergenIds: string[];
@@ -73,7 +79,17 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
   const [proteinPct, setProteinPct] = useState(product?.proteinPct?.toString() ?? "");
   const [fatPct, setFatPct] = useState(product?.fatPct?.toString() ?? "");
   const [fiberPct, setFiberPct] = useState(product?.fiberPct?.toString() ?? "");
+  const [moisturePct, setMoisturePct] = useState(product?.moisturePct?.toString() ?? "");
+  const [ashPct, setAshPct] = useState(product?.ashPct?.toString() ?? "");
+  const [taurinePct, setTaurinePct] = useState(product?.taurinePct?.toString() ?? "");
   const [kcalPer100g, setKcalPer100g] = useState(product?.kcalPer100g?.toString() ?? "");
+  const [chondroitinMgPerKg, setChondroitinMgPerKg] = useState(
+    product?.chondroitinMgPerKg?.toString() ?? "",
+  );
+  const [glucosamineMgPerKg, setGlucosamineMgPerKg] = useState(
+    product?.glucosamineMgPerKg?.toString() ?? "",
+  );
+  const [ingredients, setIngredients] = useState(product?.ingredients ?? "");
   const [suitableFor, setSuitableFor] = useState<string[]>(product?.suitableFor ?? []);
   const [lifeStages, setLifeStages] = useState<string[]>(product?.lifeStages ?? []);
   const [allergenIds, setAllergenIds] = useState<string[]>(product?.allergenIds ?? []);
@@ -98,11 +114,33 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
     if (result.proteinPct) setProteinPct(result.proteinPct);
     if (result.fatPct) setFatPct(result.fatPct);
     if (result.fiberPct) setFiberPct(result.fiberPct);
+    if (result.moisturePct) setMoisturePct(result.moisturePct);
+    if (result.ashPct) setAshPct(result.ashPct);
+    if (result.taurinePct) setTaurinePct(result.taurinePct);
     if (result.kcalPer100g) setKcalPer100g(result.kcalPer100g);
+    if (result.chondroitinMgPerKg) setChondroitinMgPerKg(result.chondroitinMgPerKg);
+    if (result.glucosamineMgPerKg) setGlucosamineMgPerKg(result.glucosamineMgPerKg);
+    if (result.ingredients) setIngredients(result.ingredients);
     if (result.suitableFor.length) setSuitableFor(result.suitableFor);
     if (result.lifeStages.length) setLifeStages(result.lifeStages);
     if (result.allergenIds.length) setAllergenIds(result.allergenIds);
     setVariants((current) => {
+      if (current.some((item) => item.id)) {
+        return current;
+      }
+      if (result.packSizes.length > 0) {
+        return result.packSizes.map((size, index) => ({
+          sku:
+            index === 0
+              ? result.variantSku
+              : `${result.variantSku}-${size.toUpperCase()}`,
+          name: `${size} 裝`,
+          unitType: "SINGLE",
+          unitsPerCase: 1,
+          priceDollars: index === 0 ? result.priceDollars : "",
+          isActive: true,
+        }));
+      }
       const next = [...current];
       if (!next[0]) next[0] = emptyVariant();
       next[0] = {
@@ -156,8 +194,7 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
       <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4">
         <p className="text-sm font-medium">從官網與網上搜尋並填入</p>
         <p className="mt-1 text-xs text-zinc-600">
-          輸入商品名稱（建議含品牌，如「Royal Canin 幼貓乾糧」），系統會查找 Wikipedia、Open Food
-          Facts 與搜尋結果後自動填入。
+          輸入商品名稱（建議含品牌與種類，如「Ziwi Peak 風乾貓糧 鯖魚及羊肉配方」）。系統會優先讀取品牌官網商品頁的成份與保證分析。
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
@@ -234,6 +271,14 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
           rows={3}
           className="md:col-span-2 rounded-lg border border-amber-200 px-3 py-2 text-sm"
         />
+        <textarea
+          name="ingredients"
+          value={ingredients}
+          onChange={(e) => setIngredients(e.target.value)}
+          placeholder="主要成份"
+          rows={3}
+          className="md:col-span-2 rounded-lg border border-amber-200 px-3 py-2 text-sm"
+        />
       </div>
 
       {imageUrl && (
@@ -256,33 +301,60 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
       </label>
 
       <div>
-        <p className="text-sm font-medium">營養資訊（選填）</p>
+        <p className="text-sm font-medium">營養分析（選填，供 CRM 熱量／進階營養使用）</p>
         <div className="mt-2 grid gap-3 md:grid-cols-4">
           <input
             name="proteinPct"
             type="number"
-            step="0.1"
+            step="0.01"
             value={proteinPct}
             onChange={(e) => setProteinPct(e.target.value)}
-            placeholder="蛋白質 %"
+            placeholder="粗蛋白質 %"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
           <input
             name="fatPct"
             type="number"
-            step="0.1"
+            step="0.01"
             value={fatPct}
             onChange={(e) => setFatPct(e.target.value)}
-            placeholder="脂肪 %"
+            placeholder="粗脂肪 %"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
           <input
             name="fiberPct"
             type="number"
-            step="0.1"
+            step="0.01"
             value={fiberPct}
             onChange={(e) => setFiberPct(e.target.value)}
-            placeholder="纖維 %"
+            placeholder="粗纖維 %"
+            className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
+          />
+          <input
+            name="moisturePct"
+            type="number"
+            step="0.01"
+            value={moisturePct}
+            onChange={(e) => setMoisturePct(e.target.value)}
+            placeholder="水份 %"
+            className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
+          />
+          <input
+            name="ashPct"
+            type="number"
+            step="0.01"
+            value={ashPct}
+            onChange={(e) => setAshPct(e.target.value)}
+            placeholder="灰質 %"
+            className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
+          />
+          <input
+            name="taurinePct"
+            type="number"
+            step="0.01"
+            value={taurinePct}
+            onChange={(e) => setTaurinePct(e.target.value)}
+            placeholder="牛磺酸 %"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
           <input
@@ -293,6 +365,24 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
             onChange={(e) => setKcalPer100g(e.target.value)}
             placeholder="kcal / 100g"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
+          />
+          <input
+            name="chondroitinMgPerKg"
+            type="number"
+            step="1"
+            value={chondroitinMgPerKg}
+            onChange={(e) => setChondroitinMgPerKg(e.target.value)}
+            placeholder="硫酸軟骨素 mg/kg"
+            className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
+          />
+          <input
+            name="glucosamineMgPerKg"
+            type="number"
+            step="1"
+            value={glucosamineMgPerKg}
+            onChange={(e) => setGlucosamineMgPerKg(e.target.value)}
+            placeholder="葡萄糖胺 mg/kg"
+            className="rounded-lg border border-amber-200 px-3 py-2 text-sm md:col-span-2"
           />
         </div>
       </div>

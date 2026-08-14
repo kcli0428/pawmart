@@ -2,17 +2,27 @@ import { slugify } from "@/lib/utils";
 import {
   extractDuckDuckGoResults,
   extractHkdPrice,
+  extractIngredients,
   extractJsonLdProduct,
   extractNutrition,
   extractOpenGraph,
+  extractPackSizes,
+  extractSitemapLocs,
+  extractUrlsFromQuery,
   extractWeightLabel,
+  htmlToPlainText,
   inferAllergenIds,
   inferBrand,
   inferCategoryId,
   inferLifeStages,
   inferSpecies,
+  isGenericBrandCopy,
   preferOfficialHits,
+  rankUrlsForQuery,
+  scoreProductUrl,
+  slugFromProductUrl,
   suggestedSku,
+  type NutritionFacts,
   type SearchHit,
   type ProductLookupResult,
 } from "@/lib/product-lookup-parse";
@@ -57,12 +67,58 @@ async function fetchJson<T>(url: string, timeoutMs = 8000): Promise<T | null> {
   }
 }
 
-async function searchDuckDuckGo(query: string): Promise<SearchHit[]> {
+const BRAND_SITES: Array<{ match: RegExp; host: string }> = [
+  { match: /ziwi/i, host: "www.ziwipetshk.com" },
+  { match: /royal\s*canin|皇家/i, host: "www.royalcanin.com" },
+  { match: /hill'?s|希爾斯/i, host: "www.hillspet.com" },
+  { match: /orijen/i, host: "www.orijenpetfoods.com" },
+];
+
+async function searchDuckDuckGo(query: string, site?: string): Promise<SearchHit[]> {
+  const q = site ? `site:${site} ${query}` : `${query} 官網`;
   const html = await fetchText(
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${query} 寵物 官網 pet food official`)}`,
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+    10000,
   );
   if (!html) return [];
-  return preferOfficialHits(extractDuckDuckGoResults(html), query).slice(0, 8);
+  return preferOfficialHits(extractDuckDuckGoResults(html), query).slice(0, 10);
+}
+
+async function discoverOfficialProductUrls(query: string): Promise<string[]> {
+  const known = BRAND_SITES.find((item) => item.match.test(query));
+  if (!known) return [];
+  const origin = `https://${known.host}`;
+  const indexXml = await fetchText(`${origin}/sitemap.xml`, 8000);
+  if (!indexXml) return [];
+
+  const locs = extractSitemapLocs(indexXml);
+  const pageUrls = locs.filter((url) => !/\.xml(\?|$)/i.test(url));
+  const sitemapUrls = locs.filter((url) => /\.xml(\?|$)/i.test(url));
+  const preferred = sitemapUrls.filter((url) => /pages-sitemap/i.test(url));
+  const others = sitemapUrls.filter((url) => !/pages-sitemap/i.test(url)).slice(0, 2);
+  const childXmls = await Promise.all(
+    [...preferred, ...others].map((url) => fetchText(url, 8000)),
+  );
+  for (const xml of childXmls) {
+    if (!xml) continue;
+    pageUrls.push(...extractSitemapLocs(xml).filter((url) => !/\.xml(\?|$)/i.test(url)));
+  }
+  return rankUrlsForQuery(pageUrls, query).slice(0, 3);
+}
+
+async function gatherSearchHits(query: string): Promise<SearchHit[]> {
+  const known = BRAND_SITES.find((item) => item.match.test(query));
+  const [hits, siteHits, sitemapUrls] = await Promise.all([
+    searchDuckDuckGo(query),
+    known ? searchDuckDuckGo(query, known.host) : Promise.resolve([] as SearchHit[]),
+    discoverOfficialProductUrls(query),
+  ]);
+  const sitemapHits: SearchHit[] = sitemapUrls.map((url) => ({
+    title: "品牌官網商品頁",
+    url,
+    snippet: query,
+  }));
+  return preferOfficialHits([...sitemapHits, ...siteHits, ...hits], query);
 }
 
 type WikiSearch = {
@@ -147,20 +203,54 @@ async function searchOpenFoodFacts(query: string) {
 }
 
 async function scrapeProductPage(url: string) {
-  const html = await fetchText(url);
+  const html = await fetchText(url, 12000);
   if (!html) return null;
+  const text = htmlToPlainText(html);
   const jsonLd = extractJsonLdProduct(html);
   const og = extractOpenGraph(html);
-  const nutrition = extractNutrition(html);
+  const nutrition = extractNutrition(text);
+  const ingredients = extractIngredients(text);
   return {
     name: jsonLd.name || og.name,
     brand: jsonLd.brand,
     description: jsonLd.description || og.description,
     imageUrl: jsonLd.imageUrl || og.imageUrl,
-    priceHkdDollars: jsonLd.priceHkdDollars || extractHkdPrice(html),
+    priceHkdDollars: jsonLd.priceHkdDollars || extractHkdPrice(text),
+    ingredients,
     nutrition,
+    packSizes: extractPackSizes(`${og.name ?? ""} ${text.slice(0, 4000)}`),
+    text,
     url,
   };
+}
+
+function mergeNutrition(...parts: Array<NutritionFacts | undefined>): NutritionFacts {
+  const merged: NutritionFacts = {};
+  for (const part of parts) {
+    if (!part) continue;
+    for (const [key, value] of Object.entries(part) as [keyof NutritionFacts, number | undefined][]) {
+      if (merged[key] == null && value != null) merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function productDescription(input: {
+  query: string;
+  ingredients?: string;
+  pageDescription?: string;
+  wiki?: string;
+}) {
+  const page =
+    input.pageDescription && !isGenericBrandCopy(input.pageDescription, input.query)
+      ? input.pageDescription
+      : undefined;
+  const blocks = [
+    page,
+    input.ingredients ? `主要成份：${input.ingredients}` : undefined,
+  ].filter(Boolean);
+  if (blocks.length > 0) return blocks.join("\n\n");
+  return input.wiki ?? "";
 }
 
 function firstText(...values: Array<string | undefined>) {
@@ -171,6 +261,10 @@ function formatNum(value: number | undefined) {
   return value == null ? "" : String(value);
 }
 
+function nutritionFieldCount(nutrition: NutritionFacts) {
+  return Object.values(nutrition).filter((value) => value != null).length;
+}
+
 export async function lookupProduct(
   input: ProductLookupInput,
 ): Promise<ProductLookupResult | null> {
@@ -178,16 +272,15 @@ export async function lookupProduct(
   if (query.length < 2) return null;
 
   const [ddgHits, wikiZh, wikiEn, off] = await Promise.all([
-    searchDuckDuckGo(query),
+    gatherSearchHits(query),
     searchWikipedia(query, "zh"),
     searchWikipedia(query, "en"),
     searchOpenFoodFacts(query),
   ]);
 
-  const pagesToFetch = ddgHits
-    .map((hit) => hit.url)
+  const pagesToFetch = [...new Set([...extractUrlsFromQuery(query), ...ddgHits.map((hit) => hit.url)])]
     .filter((url) => !/\.pdf($|\?)/i.test(url))
-    .slice(0, 3);
+    .slice(0, 8);
 
   const scraped = (
     await Promise.all(pagesToFetch.map((url) => scrapeProductPage(url)))
@@ -203,57 +296,92 @@ export async function lookupProduct(
     off?.description,
     off?.categories,
     ...ddgHits.flatMap((hit) => [hit.title, hit.snippet]),
-    ...scraped.flatMap((page) => [page.name, page.brand, page.description]),
+    ...scraped.flatMap((page) => [page.name, page.brand, page.description, page.ingredients, page.text?.slice(0, 2500)]),
   ]
     .filter(Boolean)
     .join("\n");
 
-  const parsedNutrition = extractNutrition(combinedText);
-  const pageNutrition = scraped.find(
-    (page) =>
-      page.nutrition.proteinPct != null ||
-      page.nutrition.fatPct != null ||
-      page.nutrition.kcalPer100g != null,
-  )?.nutrition;
-  const offNutrition = {
-    proteinPct: off?.proteinPct ?? pageNutrition?.proteinPct ?? parsedNutrition.proteinPct,
-    fatPct: off?.fatPct ?? pageNutrition?.fatPct ?? parsedNutrition.fatPct,
-    fiberPct: off?.fiberPct ?? pageNutrition?.fiberPct ?? parsedNutrition.fiberPct,
-    kcalPer100g:
-      off?.kcalPer100g ?? pageNutrition?.kcalPer100g ?? parsedNutrition.kcalPer100g,
-  };
+  const officialPage = [...scraped]
+    .map((page) => ({
+      page,
+      score:
+        nutritionFieldCount(page.nutrition) * 3 +
+        (page.ingredients ? 8 : 0) +
+        scoreProductUrl(page.url, query),
+    }))
+    .sort((a, b) => b.score - a.score)[0]?.page;
+  const pageNutrition = officialPage?.nutrition;
+  const parsedFromOfficial = officialPage?.text
+    ? extractNutrition(officialPage.text)
+    : undefined;
+  const nutrition = mergeNutrition(
+    parsedFromOfficial,
+    pageNutrition,
+    extractNutrition(officialPage?.text ?? ""),
+    extractNutrition(combinedText),
+    {
+      proteinPct: off?.proteinPct,
+      fatPct: off?.fatPct,
+      fiberPct: off?.fiberPct,
+      kcalPer100g: off?.kcalPer100g,
+    },
+  );
 
   const name = query;
 
   const brand = firstText(
+    officialPage?.brand,
     scraped.find((page) => page.brand)?.brand,
     off?.brand,
-    inferBrand(combinedText),
     inferBrand(query),
+    inferBrand(combinedText),
   );
-  const description = firstText(
-    scraped.find((page) => page.description && page.description.length > 40)
-      ?.description,
-    wiki?.description,
-    off?.description,
-    ddgHits[0]?.snippet,
-  );
+  const ingredients =
+    officialPage?.ingredients ||
+    scraped.find((page) => page.ingredients)?.ingredients ||
+    extractIngredients(combinedText) ||
+    "";
+  const description = productDescription({
+    query,
+    ingredients,
+    pageDescription: firstText(
+      officialPage?.description && !isGenericBrandCopy(officialPage.description, query)
+        ? officialPage.description
+        : undefined,
+      officialPage?.name && /配方|貓糧|狗糧|cat|dog/i.test(officialPage.name)
+        ? officialPage.name
+        : undefined,
+    ),
+    wiki: wiki?.description,
+  });
   const imageUrl = firstText(
+    officialPage?.imageUrl,
     scraped.find((page) => page.imageUrl)?.imageUrl,
     off?.imageUrl,
     wiki?.imageUrl,
   );
   const priceDollars = firstText(
+    officialPage?.priceHkdDollars,
     scraped.find((page) => page.priceHkdDollars)?.priceHkdDollars,
     extractHkdPrice(combinedText),
   );
-  const weight = extractWeightLabel(`${query} ${name} ${combinedText}`);
+  const packSizes =
+    officialPage?.packSizes?.length
+      ? officialPage.packSizes
+      : extractPackSizes(`${query} ${combinedText}`);
+  const weight = packSizes[0] ?? extractWeightLabel(`${query} ${name} ${combinedText}`);
   const querySpecies = inferSpecies(query);
   const queryStages = inferLifeStages(query);
   const species = querySpecies.length ? querySpecies : inferSpecies(combinedText);
-  const lifeStages = queryStages.length ? queryStages : inferLifeStages(combinedText);
+  const lifeStages = queryStages;
 
   const sources: { title: string; url: string }[] = [];
+  if (officialPage) {
+    sources.push({
+      title: officialPage.name || "品牌官網商品頁",
+      url: officialPage.url,
+    });
+  }
   if (wiki) sources.push({ title: `Wikipedia：${wiki.title}`, url: wiki.url });
   if (off) sources.push({ title: "Open Food Facts", url: off.url });
   for (const hit of ddgHits.slice(0, 3)) {
@@ -262,9 +390,11 @@ export async function lookupProduct(
     }
   }
 
-  const englishSlugSource =
-    wikiEn?.title || scraped.find((page) => page.name)?.name || brand || name;
-  const slug = slugify(englishSlugSource) || slugify(brand) || slugify(name);
+  const slug =
+    (officialPage && slugFromProductUrl(officialPage.url)) ||
+    slugify(brand) ||
+    slugify(name) ||
+    `product-${Date.now().toString(36)}`;
 
   return {
     name,
@@ -272,16 +402,23 @@ export async function lookupProduct(
     brand,
     description,
     imageUrl,
-    categoryId: inferCategoryId(`${query}\n${combinedText}`, input.categories) ?? "",
-    proteinPct: formatNum(offNutrition.proteinPct),
-    fatPct: formatNum(offNutrition.fatPct),
-    fiberPct: formatNum(offNutrition.fiberPct),
-    kcalPer100g: formatNum(offNutrition.kcalPer100g),
+    categoryId: inferCategoryId(query, combinedText, input.categories) ?? "",
+    proteinPct: formatNum(nutrition.proteinPct),
+    fatPct: formatNum(nutrition.fatPct),
+    fiberPct: formatNum(nutrition.fiberPct),
+    kcalPer100g: formatNum(nutrition.kcalPer100g),
+    moisturePct: formatNum(nutrition.moisturePct),
+    ashPct: formatNum(nutrition.ashPct),
+    taurinePct: formatNum(nutrition.taurinePct),
+    chondroitinMgPerKg: formatNum(nutrition.chondroitinMgPerKg),
+    glucosamineMgPerKg: formatNum(nutrition.glucosamineMgPerKg),
+    ingredients,
     suitableFor: species,
     lifeStages,
-    allergenIds: inferAllergenIds(combinedText, input.allergens),
-    variantSku: suggestedSku(brand || englishSlugSource || name),
+    allergenIds: inferAllergenIds(ingredients || query, input.allergens),
+    variantSku: suggestedSku(brand || slug || name),
     variantName: weight ? `${weight} 裝` : "標準裝",
+    packSizes,
     priceDollars,
     sources,
   };

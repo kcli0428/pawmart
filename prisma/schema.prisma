@@ -130,7 +130,13 @@ model Product {
   proteinPct  Float?
   fatPct      Float?
   fiberPct    Float?
+  moisturePct Float?
+  ashPct      Float?
+  taurinePct  Float?
   kcalPer100g Float?
+  chondroitinMgPerKg Float?
+  glucosamineMgPerKg Float?
+  ingredients String?
   suitableFor PetSpecies[]
   lifeStages  PetLifeStage[]
   createdAt   DateTime       @default(now())

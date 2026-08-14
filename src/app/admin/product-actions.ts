@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { dollarsToCents, slugify } from "@/lib/utils";
+import { gramsFromLabel } from "@/lib/product-lookup-parse";
 import type { AdminActionState } from "@/app/admin/actions";
 
 const SPECIES = Object.values(PetSpecies);
@@ -28,6 +29,13 @@ async function uniqueProductSlug(base: string, excludeId?: string) {
   }
 }
 
+function optionalFloat(formData: FormData, key: string): number | null {
+  const raw = String(formData.get(key) ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function parseVariants(formData: FormData) {
   const count = Number(formData.get("variantCount") ?? 0);
   const variants: {
@@ -37,6 +45,7 @@ function parseVariants(formData: FormData) {
     unitType: ProductUnitType;
     unitsPerCase: number;
     priceHkd: number;
+    weightGrams: number | null;
     isActive: boolean;
   }[] = [];
 
@@ -64,6 +73,7 @@ function parseVariants(formData: FormData) {
       unitType: unitType as ProductUnitType,
       unitsPerCase: Math.max(1, unitsPerCase || 1),
       priceHkd: dollarsToCents(priceRaw),
+      weightGrams: gramsFromLabel(`${name} ${sku}`) ?? null,
       isActive,
     });
   }
@@ -85,14 +95,16 @@ export async function saveProductAction(
   const categoryId = String(formData.get("categoryId") ?? "").trim() || null;
   const imageUrl = String(formData.get("imageUrl") ?? "").trim() || null;
   const isActive = formData.get("isActive") === "on";
-  const proteinPct = formData.get("proteinPct")
-    ? Number(formData.get("proteinPct"))
-    : null;
-  const fatPct = formData.get("fatPct") ? Number(formData.get("fatPct")) : null;
-  const fiberPct = formData.get("fiberPct") ? Number(formData.get("fiberPct")) : null;
-  const kcalPer100g = formData.get("kcalPer100g")
-    ? Number(formData.get("kcalPer100g"))
-    : null;
+  const proteinPct = optionalFloat(formData, "proteinPct");
+  const fatPct = optionalFloat(formData, "fatPct");
+  const fiberPct = optionalFloat(formData, "fiberPct");
+  const moisturePct = optionalFloat(formData, "moisturePct");
+  const ashPct = optionalFloat(formData, "ashPct");
+  const taurinePct = optionalFloat(formData, "taurinePct");
+  const kcalPer100g = optionalFloat(formData, "kcalPer100g");
+  const chondroitinMgPerKg = optionalFloat(formData, "chondroitinMgPerKg");
+  const glucosamineMgPerKg = optionalFloat(formData, "glucosamineMgPerKg");
+  const ingredients = String(formData.get("ingredients") ?? "").trim() || null;
   const suitableFor = formData
     .getAll("suitableFor")
     .map(String)
@@ -133,7 +145,13 @@ export async function saveProductAction(
     proteinPct,
     fatPct,
     fiberPct,
+    moisturePct,
+    ashPct,
+    taurinePct,
     kcalPer100g,
+    chondroitinMgPerKg,
+    glucosamineMgPerKg,
+    ingredients,
     suitableFor,
     lifeStages,
   };
@@ -155,6 +173,7 @@ export async function saveProductAction(
               unitType: variant.unitType,
               unitsPerCase: variant.unitsPerCase,
               priceHkd: variant.priceHkd,
+              weightGrams: variant.weightGrams,
               isActive: variant.isActive,
             },
           });
@@ -167,6 +186,7 @@ export async function saveProductAction(
               unitType: variant.unitType,
               unitsPerCase: variant.unitsPerCase,
               priceHkd: variant.priceHkd,
+              weightGrams: variant.weightGrams,
               isActive: variant.isActive,
             },
           });

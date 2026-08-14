@@ -59,7 +59,14 @@ export default async function ProductDetailPage({ params }: Props) {
             <p className="mt-1 text-sm text-zinc-500">{product.category.name}</p>
           )}
 
-          <p className="mt-4 text-zinc-600">{product.description}</p>
+          <p className="mt-4 whitespace-pre-line text-zinc-600">{product.description}</p>
+
+          {product.ingredients && (
+            <p className="mt-4 text-sm text-zinc-700">
+              <span className="font-medium">主要成份：</span>
+              {product.ingredients}
+            </p>
+          )}
 
           {product.suitableFor.length > 0 && (
             <p className="mt-4 text-sm">
@@ -80,14 +87,28 @@ export default async function ProductDetailPage({ params }: Props) {
             </p>
           )}
 
-          {(product.proteinPct || product.kcalPer100g) && (
+          {(product.proteinPct ||
+            product.kcalPer100g ||
+            product.moisturePct ||
+            product.taurinePct) && (
             <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm">
-              <p className="font-medium text-amber-800">營養資訊（每 100g）</p>
+              <p className="font-medium text-amber-800">營養分析（保證分析）</p>
               <div className="mt-2 grid grid-cols-2 gap-2 text-zinc-600">
-                {product.proteinPct != null && <span>蛋白質 {product.proteinPct}%</span>}
-                {product.fatPct != null && <span>脂肪 {product.fatPct}%</span>}
-                {product.fiberPct != null && <span>纖維 {product.fiberPct}%</span>}
-                {product.kcalPer100g != null && <span>熱量 {product.kcalPer100g} kcal</span>}
+                {product.proteinPct != null && <span>粗蛋白質 {product.proteinPct}%</span>}
+                {product.fatPct != null && <span>粗脂肪 {product.fatPct}%</span>}
+                {product.fiberPct != null && <span>粗纖維 {product.fiberPct}%</span>}
+                {product.moisturePct != null && <span>水份 {product.moisturePct}%</span>}
+                {product.ashPct != null && <span>灰質 {product.ashPct}%</span>}
+                {product.taurinePct != null && <span>牛磺酸 {product.taurinePct}%</span>}
+                {product.chondroitinMgPerKg != null && (
+                  <span>硫酸軟骨素 {product.chondroitinMgPerKg} mg/kg</span>
+                )}
+                {product.glucosamineMgPerKg != null && (
+                  <span>葡萄糖胺 {product.glucosamineMgPerKg} mg/kg</span>
+                )}
+                {product.kcalPer100g != null && (
+                  <span>代謝能 {product.kcalPer100g} kcal / 100g</span>
+                )}
               </div>
             </div>
           )}
