@@ -8,7 +8,7 @@ const schema = z.object({
   species: z.enum(["DOG", "CAT", "BIRD", "RABBIT", "OTHER"]),
   breed: z.string().optional(),
   weightKg: z.number().positive().optional(),
-  lifeStage: z.enum(["PUPPY", "KITTEN", "ADULT", "SENIOR"]).optional(),
+  lifeStage: z.enum(["PUPPY", "KITTEN", "ADULT_DOG", "ADULT_CAT", "SENIOR_DOG", "SENIOR_CAT"]).optional(),
   allergies: z.array(z.string()).default([]),
   birthDate: z.string().optional(),
 });

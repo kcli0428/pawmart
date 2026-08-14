@@ -11,14 +11,15 @@ describe("inferredLifeStage", () => {
   it("classifies dogs by age", () => {
     const now = new Date("2026-08-14");
     assert.equal(inferredLifeStage("DOG", new Date("2026-01-14"), now), "PUPPY");
-    assert.equal(inferredLifeStage("DOG", new Date("2024-08-14"), now), "ADULT");
-    assert.equal(inferredLifeStage("DOG", new Date("2017-08-14"), now), "SENIOR");
+    assert.equal(inferredLifeStage("DOG", new Date("2024-08-14"), now), "ADULT_DOG");
+    assert.equal(inferredLifeStage("DOG", new Date("2017-08-14"), now), "SENIOR_DOG");
   });
 
   it("classifies cats by age", () => {
     const now = new Date("2026-08-14");
     assert.equal(inferredLifeStage("CAT", new Date("2026-02-01"), now), "KITTEN");
-    assert.equal(inferredLifeStage("CAT", new Date("2015-08-14"), now), "SENIOR");
+    assert.equal(inferredLifeStage("CAT", new Date("2024-08-14"), now), "ADULT_CAT");
+    assert.equal(inferredLifeStage("CAT", new Date("2015-08-14"), now), "SENIOR_CAT");
   });
 });
 

@@ -455,19 +455,34 @@ export function inferSpecies(text: string): string[] {
 
 export function inferLifeStages(text: string): string[] {
   const value = text.toLowerCase();
+  const species = inferSpecies(value);
+  const catOnly = species.includes("CAT") && !species.includes("DOG");
+  const dogOnly = species.includes("DOG") && !species.includes("CAT");
   const found: string[] = [];
   if (/幼犬|puppy/.test(value)) found.push("PUPPY");
   if (/幼貓|kitten/.test(value)) found.push("KITTEN");
-  if (/成犬|成貓|adult/.test(value)) found.push("ADULT");
-  if (/老年|senior|ageing|aging/.test(value)) found.push("SENIOR");
+  if (/成犬/.test(value) || (/adult/.test(value) && dogOnly)) found.push("ADULT_DOG");
+  if (/成貓/.test(value) || (/adult/.test(value) && catOnly)) found.push("ADULT_CAT");
+  if (/adult/.test(value) && !catOnly && !dogOnly && !found.includes("ADULT_DOG") && !found.includes("ADULT_CAT")) {
+    if (species.includes("DOG")) found.push("ADULT_DOG");
+    if (species.includes("CAT")) found.push("ADULT_CAT");
+  }
+  if (/老犬|老年犬/.test(value) || (/senior|ageing|aging|老年/.test(value) && dogOnly)) {
+    found.push("SENIOR_DOG");
+  }
+  if (/老貓|老年貓/.test(value) || (/senior|ageing|aging|老年/.test(value) && catOnly)) {
+    found.push("SENIOR_CAT");
+  }
+  if (/senior|ageing|aging|老年/.test(value) && !catOnly && !dogOnly) {
+    if (species.includes("DOG") && !found.includes("SENIOR_DOG")) found.push("SENIOR_DOG");
+    if (species.includes("CAT") && !found.includes("SENIOR_CAT")) found.push("SENIOR_CAT");
+  }
   if (/全齡|all.?life.?stages|all.?ages/.test(value)) {
-    const species = inferSpecies(value);
-    const stages =
-      species.includes("CAT") && !species.includes("DOG")
-        ? ["KITTEN", "ADULT", "SENIOR"]
-        : species.includes("DOG") && !species.includes("CAT")
-          ? ["PUPPY", "ADULT", "SENIOR"]
-          : ["PUPPY", "KITTEN", "ADULT", "SENIOR"];
+    const stages = catOnly
+      ? ["KITTEN", "ADULT_CAT", "SENIOR_CAT"]
+      : dogOnly
+        ? ["PUPPY", "ADULT_DOG", "SENIOR_DOG"]
+        : ["PUPPY", "KITTEN", "ADULT_DOG", "ADULT_CAT", "SENIOR_DOG", "SENIOR_CAT"];
     for (const stage of stages) {
       if (!found.includes(stage)) found.push(stage);
     }

@@ -18,18 +18,18 @@ export function inferredLifeStage(
 
   if (species === "DOG") {
     if (months < 12) return "PUPPY";
-    if (months >= 96) return "SENIOR";
-    return "ADULT";
+    if (months >= 96) return "SENIOR_DOG";
+    return "ADULT_DOG";
   }
 
   if (species === "CAT") {
     if (months < 12) return "KITTEN";
-    if (months >= 120) return "SENIOR";
-    return "ADULT";
+    if (months >= 120) return "SENIOR_CAT";
+    return "ADULT_CAT";
   }
 
-  if (months >= 84) return "SENIOR";
-  return "ADULT";
+  if (months >= 84) return "SENIOR_DOG";
+  return "ADULT_DOG";
 }
 
 export function daysUntilBirthday(birthDate: Date, now = new Date()): number {

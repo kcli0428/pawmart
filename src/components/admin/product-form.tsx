@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { saveProductAction } from "@/app/admin/product-actions";
 import type { AdminActionState } from "@/app/admin/actions";
 import {
-  LIFE_STAGE_LABELS,
+  LIFE_STAGE_GROUPS,
   PET_SPECIES_LABELS,
   UNIT_TYPE_LABELS,
 } from "@/lib/constants";
@@ -414,18 +414,25 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
 
       <div>
         <p className="text-sm font-medium">適用生命階段</p>
-        <div className="mt-2 flex flex-wrap gap-3 text-sm">
-          {Object.entries(LIFE_STAGE_LABELS).map(([value, label]) => (
-            <label key={value} className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                name="lifeStages"
-                value={value}
-                checked={lifeStages.includes(value)}
-                onChange={() => setLifeStages((current) => toggle(current, value))}
-              />
-              {label}
-            </label>
+        <div className="mt-2 space-y-3">
+          {LIFE_STAGE_GROUPS.map((group) => (
+            <div key={group.species}>
+              <p className="text-xs font-medium text-zinc-500">{group.label}</p>
+              <div className="mt-1 flex flex-wrap gap-3 text-sm">
+                {group.stages.map((stage) => (
+                  <label key={stage.value} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      name="lifeStages"
+                      value={stage.value}
+                      checked={lifeStages.includes(stage.value)}
+                      onChange={() => setLifeStages((current) => toggle(current, stage.value))}
+                    />
+                    {stage.label}
+                  </label>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -468,7 +475,7 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
           {variants.map((variant, index) => (
             <div
               key={variant.id ?? `new-${index}`}
-              className="grid gap-2 rounded-xl border border-amber-100 p-3 md:grid-cols-6"
+              className="grid gap-2 rounded-xl border border-amber-100 p-3 md:grid-cols-7"
             >
               {variant.id && (
                 <input type="hidden" name={`variantId_${index}`} value={variant.id} />
@@ -550,21 +557,38 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                 placeholder="售價 HKD"
                 className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
               />
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  name={`variantActive_${index}`}
-                  checked={variant.isActive}
-                  onChange={(e) =>
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name={`variantActive_${index}`}
+                    checked={variant.isActive}
+                    onChange={(e) =>
+                      setVariants((current) =>
+                        current.map((item, i) =>
+                          i === index ? { ...item, isActive: e.target.checked } : item,
+                        ),
+                      )
+                    }
+                  />
+                  上架
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-700"
+                  disabled={variants.length <= 1}
+                  title={variants.length <= 1 ? "至少保留一個規格" : "刪除規格"}
+                  onClick={() =>
                     setVariants((current) =>
-                      current.map((item, i) =>
-                        i === index ? { ...item, isActive: e.target.checked } : item,
-                      ),
+                      current.length <= 1 ? current : current.filter((_, i) => i !== index),
                     )
                   }
-                />
-                上架
-              </label>
+                >
+                  刪除
+                </Button>
+              </div>
             </div>
           ))}
         </div>

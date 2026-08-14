@@ -23,8 +23,10 @@ enum PetSpecies {
 enum PetLifeStage {
   PUPPY
   KITTEN
-  ADULT
-  SENIOR
+  ADULT_DOG
+  ADULT_CAT
+  SENIOR_DOG
+  SENIOR_CAT
 }
 
 enum OrderStatus {

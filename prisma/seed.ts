@@ -88,9 +88,14 @@ async function main() {
     create: { name: "grain", nameZh: "穀物" },
   });
 
+  const catLifeStages = [
+    PetLifeStage.KITTEN,
+    PetLifeStage.ADULT_CAT,
+    PetLifeStage.SENIOR_CAT,
+  ];
   const catProduct = await prisma.product.upsert({
     where: { slug: "premium-cat-pate-400g" },
-    update: {},
+    update: { lifeStages: catLifeStages, categoryId: catWet.id },
     create: {
       name: "Premium 貓用肉泥罐 400g",
       slug: "premium-cat-pate-400g",
@@ -102,7 +107,7 @@ async function main() {
       fiberPct: 1,
       kcalPer100g: 95,
       suitableFor: [PetSpecies.CAT],
-      lifeStages: [PetLifeStage.KITTEN, PetLifeStage.ADULT, PetLifeStage.SENIOR],
+      lifeStages: catLifeStages,
       variants: {
         create: [
           {
@@ -134,7 +139,10 @@ async function main() {
 
   const dogProduct = await prisma.product.upsert({
     where: { slug: "salmon-dog-kibble-2kg" },
-    update: {},
+    update: {
+      lifeStages: [PetLifeStage.ADULT_DOG],
+      categoryId: dogDry.id,
+    },
     create: {
       name: "三文魚成犬糧 2kg",
       slug: "salmon-dog-kibble-2kg",
@@ -146,7 +154,7 @@ async function main() {
       fiberPct: 4,
       kcalPer100g: 360,
       suitableFor: [PetSpecies.DOG],
-      lifeStages: [PetLifeStage.ADULT],
+      lifeStages: [PetLifeStage.ADULT_DOG],
       variants: {
         create: [
           {
@@ -253,7 +261,7 @@ async function main() {
         species: PetSpecies.CAT,
         breed: "英短",
         weightKg: 4.2,
-        lifeStage: PetLifeStage.ADULT,
+        lifeStage: PetLifeStage.ADULT_CAT,
         allergies: ["穀物"],
         birthDate: new Date(new Date().getFullYear() - 3, new Date().getMonth(), new Date().getDate() + 3),
       },

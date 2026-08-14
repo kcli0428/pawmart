@@ -53,7 +53,8 @@ export function estimateDailyKcal(
 ): number {
   const isYoung =
     lifeStage === PetLifeStage.PUPPY || lifeStage === PetLifeStage.KITTEN;
-  const isSenior = lifeStage === PetLifeStage.SENIOR;
+  const isSenior =
+    lifeStage === PetLifeStage.SENIOR_DOG || lifeStage === PetLifeStage.SENIOR_CAT;
 
   if (species === PetSpecies.DOG) {
     const rer = 70 * Math.pow(weightKg, 0.75);

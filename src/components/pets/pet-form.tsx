@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LIFE_STAGE_GROUPS, LIFE_STAGE_LABELS } from "@/lib/constants";
 
 const SPECIES = [
   { value: "DOG", label: "狗" },
@@ -12,12 +13,11 @@ const SPECIES = [
   { value: "OTHER", label: "其他" },
 ];
 
-const LIFE_STAGES = [
-  { value: "PUPPY", label: "幼犬" },
-  { value: "KITTEN", label: "幼貓" },
-  { value: "ADULT", label: "成犬/成貓" },
-  { value: "SENIOR", label: "老年" },
-];
+function stagesForSpecies(species: string) {
+  const group = LIFE_STAGE_GROUPS.find((item) => item.species === species);
+  if (group) return group.stages.map((stage) => ({ value: stage.value, label: stage.label }));
+  return Object.entries(LIFE_STAGE_LABELS).map(([value, label]) => ({ value, label }));
+}
 
 export type PetFormValues = {
   id: string;
@@ -34,6 +34,9 @@ export function PetForm({ pet }: { pet?: PetFormValues }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [species, setSpecies] = useState(pet?.species ?? "DOG");
+  const [lifeStage, setLifeStage] = useState(pet?.lifeStage ?? "");
+  const lifeStageOptions = stagesForSpecies(species);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -101,7 +104,13 @@ export function PetForm({ pet }: { pet?: PetFormValues }) {
       <select
         name="species"
         required
-        defaultValue={pet?.species ?? "DOG"}
+        value={species}
+        onChange={(e) => {
+          const next = e.target.value;
+          setSpecies(next);
+          const allowed = stagesForSpecies(next).map((stage) => stage.value);
+          if (lifeStage && !allowed.includes(lifeStage)) setLifeStage("");
+        }}
         className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm"
       >
         {SPECIES.map((s) => (
@@ -118,11 +127,12 @@ export function PetForm({ pet }: { pet?: PetFormValues }) {
       />
       <select
         name="lifeStage"
-        defaultValue={pet?.lifeStage ?? ""}
+        value={lifeStage}
+        onChange={(e) => setLifeStage(e.target.value)}
         className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm"
       >
         <option value="">生命階段（選填）</option>
-        {LIFE_STAGES.map((s) => (
+        {lifeStageOptions.map((s) => (
           <option key={s.value} value={s.value}>
             {s.label}
           </option>

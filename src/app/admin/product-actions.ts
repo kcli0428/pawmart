@@ -3,6 +3,7 @@
 import {
   PetLifeStage,
   PetSpecies,
+  Prisma,
   ProductUnitType,
 } from "@/generated/prisma/client";
 import { revalidatePath } from "next/cache";
@@ -81,6 +82,66 @@ function parseVariants(formData: FormData) {
   return variants;
 }
 
+async function deleteRemovedVariants(
+  tx: Prisma.TransactionClient,
+  productId: string,
+  keepIds: Set<string>,
+) {
+  const existing = await tx.productVariant.findMany({
+    where: { productId },
+    select: {
+      id: true,
+      _count: {
+        select: {
+          orderItems: true,
+          subscriptions: true,
+        },
+      },
+      lots: {
+        select: {
+          _count: { select: { deductions: true } },
+        },
+      },
+    },
+  });
+  const toDelete = existing.filter((variant) => !keepIds.has(variant.id));
+  if (toDelete.length === 0) return;
+
+  for (const variant of toDelete) {
+    const hasDeductions = variant.lots.some((lot) => lot._count.deductions > 0);
+    if (
+      variant._count.orderItems > 0 ||
+      variant._count.subscriptions > 0 ||
+      hasDeductions
+    ) {
+      throw new Error("規格已有訂單或訂閱，無法刪除，請改為下架");
+    }
+  }
+
+  const remainingBundleUses = await tx.bundleItem.count({
+    where: {
+      componentVariantId: { in: toDelete.map((variant) => variant.id) },
+      bundleVariantId: { notIn: toDelete.map((variant) => variant.id) },
+    },
+  });
+  if (remainingBundleUses > 0) {
+    throw new Error("規格仍被其他組合包使用，無法刪除");
+  }
+
+  const ids = toDelete.map((variant) => variant.id);
+  await tx.cartItem.deleteMany({ where: { variantId: { in: ids } } });
+  await tx.bundleItem.deleteMany({
+    where: {
+      OR: [
+        { bundleVariantId: { in: ids } },
+        { componentVariantId: { in: ids } },
+      ],
+    },
+  });
+  await tx.productLot.deleteMany({ where: { variantId: { in: ids } } });
+  await tx.productVariant.deleteMany({ where: { id: { in: ids } } });
+}
+
 export async function saveProductAction(
   _prev: AdminActionState,
   formData: FormData,
@@ -128,8 +189,8 @@ export async function saveProductAction(
     return { error: error instanceof Error ? error.message : "規格資料錯誤" };
   }
 
-  if (!id && variants.length === 0) {
-    return { error: "新商品至少需要一個規格" };
+  if (variants.length === 0) {
+    return { error: "至少需要一個規格" };
   }
 
   const slug = await uniqueProductSlug(slugify(slugInput || name), id || undefined);
@@ -163,8 +224,16 @@ export async function saveProductAction(
         ? await tx.product.update({ where: { id }, data: productData })
         : await tx.product.create({ data: productData });
 
+      const keepIds = new Set<string>();
       for (const variant of variants) {
         if (variant.id) {
+          const owned = await tx.productVariant.findFirst({
+            where: { id: variant.id, productId: saved.id },
+            select: { id: true },
+          });
+          if (!owned) {
+            throw new Error("規格不屬於此商品");
+          }
           await tx.productVariant.update({
             where: { id: variant.id },
             data: {
@@ -177,8 +246,9 @@ export async function saveProductAction(
               isActive: variant.isActive,
             },
           });
+          keepIds.add(variant.id);
         } else {
-          await tx.productVariant.create({
+          const created = await tx.productVariant.create({
             data: {
               productId: saved.id,
               sku: variant.sku,
@@ -190,7 +260,12 @@ export async function saveProductAction(
               isActive: variant.isActive,
             },
           });
+          keepIds.add(created.id);
         }
+      }
+
+      if (id) {
+        await deleteRemovedVariants(tx, saved.id, keepIds);
       }
 
       await tx.productAllergen.deleteMany({ where: { productId: saved.id } });
@@ -209,6 +284,12 @@ export async function saveProductAction(
     const message = error instanceof Error ? error.message : "";
     if (message.includes("Unique constraint") || message.includes("sku")) {
       return { error: "SKU 或網址已存在，請改用其他值" };
+    }
+    if (
+      message.startsWith("規格") ||
+      message.startsWith("至少")
+    ) {
+      return { error: message };
     }
     throw error;
   }

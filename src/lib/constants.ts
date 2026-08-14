@@ -31,9 +31,41 @@ export const PET_SPECIES_LABELS: Record<string, string> = {
 export const LIFE_STAGE_LABELS: Record<string, string> = {
   PUPPY: "幼犬",
   KITTEN: "幼貓",
-  ADULT: "成犬/成貓",
-  SENIOR: "老年",
+  ADULT_DOG: "成犬",
+  ADULT_CAT: "成貓",
+  SENIOR_DOG: "老犬",
+  SENIOR_CAT: "老貓",
 };
+
+export const LIFE_STAGE_VALUES = [
+  "PUPPY",
+  "KITTEN",
+  "ADULT_DOG",
+  "ADULT_CAT",
+  "SENIOR_DOG",
+  "SENIOR_CAT",
+] as const;
+
+export const LIFE_STAGE_GROUPS = [
+  {
+    species: "CAT",
+    label: "貓",
+    stages: [
+      { value: "KITTEN", label: "幼貓" },
+      { value: "ADULT_CAT", label: "成貓" },
+      { value: "SENIOR_CAT", label: "老貓" },
+    ],
+  },
+  {
+    species: "DOG",
+    label: "狗",
+    stages: [
+      { value: "PUPPY", label: "幼犬" },
+      { value: "ADULT_DOG", label: "成犬" },
+      { value: "SENIOR_DOG", label: "老犬" },
+    ],
+  },
+] as const;
 
 export const UNIT_TYPE_LABELS: Record<string, string> = {
   SINGLE: "單件",

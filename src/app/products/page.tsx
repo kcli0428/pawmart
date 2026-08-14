@@ -1,7 +1,12 @@
 import { ProductCard } from "@/components/products/product-card";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { LIFE_STAGE_LABELS, PET_SPECIES_LABELS, sortCategories } from "@/lib/constants";
+import {
+  LIFE_STAGE_GROUPS,
+  LIFE_STAGE_LABELS,
+  PET_SPECIES_LABELS,
+  sortCategories,
+} from "@/lib/constants";
 import type { PetLifeStage, PetSpecies, Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 
@@ -123,10 +128,14 @@ export default async function ProductsPage({ searchParams }: Props) {
           className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
         >
           <option value="">全部階段</option>
-          {Object.entries(LIFE_STAGE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
+          {LIFE_STAGE_GROUPS.map((group) => (
+            <optgroup key={group.species} label={group.label}>
+              {group.stages.map((stage) => (
+                <option key={stage.value} value={stage.value}>
+                  {stage.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <select

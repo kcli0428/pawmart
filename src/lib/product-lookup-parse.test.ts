@@ -125,6 +125,9 @@ describe("nutrition and inference", () => {
   it("infers cat kitten and HKD price", () => {
     assert.deepEqual(inferSpecies("Royal Canin 幼貓乾糧"), ["CAT"]);
     assert.deepEqual(inferLifeStages("Kitten dry food"), ["KITTEN"]);
+    assert.deepEqual(inferLifeStages("成貓主食罐"), ["ADULT_CAT"]);
+    assert.deepEqual(inferLifeStages("成犬糧"), ["ADULT_DOG"]);
+    assert.deepEqual(inferLifeStages("全齡貓適用"), ["KITTEN", "ADULT_CAT", "SENIOR_CAT"]);
     assert.equal(extractHkdPrice("售價 HK$288.00"), "288.00");
     assert.equal(extractWeightLabel("400g ｜ 1kg"), "400g");
     assert.deepEqual(extractPackSizes("400g ｜ 1kg"), ["400g", "1kg"]);
