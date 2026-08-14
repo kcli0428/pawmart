@@ -14,11 +14,15 @@ import {
   htmlToPlainText,
   inferCategoryId,
   inferLifeStages,
+  inferProductSpecies,
   inferSpecies,
   isCatalogNoise,
+  isClipartIngredientLabel,
   isGenericBrandCopy,
   nutritionFromPage,
+  pickIngredients,
   pickProductImage,
+  queryOverlapScore,
   preferOfficialHits,
   rankUrlsForQuery,
   refineIngredients,
@@ -120,6 +124,14 @@ describe("nutrition and inference", () => {
       inferCategoryId("Astkatta 冰島 鯖魚貓主食慕絲罐", "", categories),
       "cat-wet",
     );
+    assert.equal(
+      inferCategoryId(
+        "Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G",
+        "",
+        categories,
+      ),
+      "cat-wet",
+    );
   });
 
   it("infers cat kitten and HKD price", () => {
@@ -128,6 +140,55 @@ describe("nutrition and inference", () => {
     assert.deepEqual(inferLifeStages("成貓主食罐"), ["ADULT_CAT"]);
     assert.deepEqual(inferLifeStages("成犬糧"), ["ADULT_DOG"]);
     assert.deepEqual(inferLifeStages("全齡貓適用"), ["KITTEN", "ADULT_CAT", "SENIOR_CAT"]);
+    assert.deepEqual(
+      inferProductSpecies("Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G"),
+      ["CAT"],
+    );
+    assert.equal(isClipartIngredientLabel("Chicken Icon"), true);
+    assert.equal(
+      extractIngredients("成分:\n雞肉39.5%，湯54.62%\n營養分析：\n粗蛋白質（最低）10%"),
+      "雞肉39.5%，湯54.62%",
+    );
+    assert.match(
+      extractIngredients(
+        "IngredientsChicken 39.5%, Supplement with Soup 54.62%, Soybean Oil 2%, Taurine 0.046%. Analytical constituents Crude Protein (min) 10%",
+      ) ?? "",
+      /Chicken 39\.5%/,
+    );
+    assert.equal(
+      extractIngredientAlts(
+        'Main Ingredients:<img alt="Chicken Icon" /><img alt="Soup Icon" />Analytical constituents: Protein (min): 10',
+      ),
+      undefined,
+    );
+    assert.match(
+      pickIngredients(["Chicken Icon", "雞肉39.5%，湯54.62%", "鯖魚"]) ?? "",
+      /雞肉39\.5%/,
+    );
+    assert.equal(refineIngredients("Chicken Icon", "Astkatta 雞肉絲清湯"), "");
+    assert.equal(extractNutrition("代謝能(kcal/100g) 63.34%").kcalPer100g, 63.34);
+    assert.match(
+      extractIngredients(
+        "原料\n雞肉 39.5%、湯連營養保充品 54.62%\n營養補充\n大豆油、維他命及礦物質、牛磺酸\n保證成分\n粗蛋白質（最低）10%",
+      ) ?? "",
+      /雞肉 39\.5%/,
+    );
+    assert.match(
+      extractIngredients(
+        "原料\n雞肉 39.5%、湯連營養保充品 54.62%\n營養補充\n大豆油、維他命及礦物質、牛磺酸\n保證成分\n粗蛋白質（最低）10%",
+      ) ?? "",
+      /大豆油/,
+    );
+    assert.ok(
+      queryOverlapScore(
+        "Astkatta 冰島腎臟主食包 雞肉絲清湯 50g",
+        "Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G",
+      ) >
+        queryOverlapScore(
+          "ASTKATTA Kidney Care Complete Food Chicken Pottage 走地雞濃湯",
+          "Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G",
+        ),
+    );
     assert.equal(extractHkdPrice("售價 HK$288.00"), "288.00");
     assert.equal(extractWeightLabel("400g ｜ 1kg"), "400g");
     assert.deepEqual(extractPackSizes("400g ｜ 1kg"), ["400g", "1kg"]);
@@ -205,6 +266,19 @@ describe("nutrition and inference", () => {
       "Astkatta 冰島 鯖魚貓主食慕絲罐",
     );
     assert.equal(ranked[0], "https://www.astkatta.com/mackerel-mousse-80g");
+  });
+
+  it("ranks the Kidney Care series page for 腎臟主食包 queries", () => {
+    const ranked = rankUrlsForQuery(
+      [
+        "https://www.astkatta.com/crocodile-mousse-80g",
+        "https://www.astkatta.com/mackerel-mousse-80g",
+        "https://www.astkatta.com/products",
+        "https://www.astkatta.com/kidney-care-series",
+      ],
+      "Astkatta冰島 Kidney Care腎臟主食包-雞肉絲清湯50G",
+    );
+    assert.equal(ranked[0], "https://www.astkatta.com/kidney-care-series");
   });
 
   it("parses Wix-style official HTML into ingredients and analysis", () => {

@@ -19,13 +19,16 @@ import {
   inferBrand,
   inferCategoryId,
   inferLifeStages,
-  inferSpecies,
+  inferProductSpecies,
   isCatalogNoise,
+  isClipartIngredientLabel,
   isGenericBrandCopy,
   looksLikeIngredientList,
   nutritionFromPage,
+  pickIngredients,
   pickProductImage,
   preferOfficialHits,
+  queryOverlapScore,
   rankUrlsForQuery,
   refineIngredients,
   scoreProductUrl,
@@ -84,8 +87,8 @@ const BRAND_SITES: Array<{ match: RegExp; host: string }> = [
   { match: /orijen/i, host: "www.orijenpetfoods.com" },
 ];
 
-async function searchDuckDuckGo(query: string, site?: string): Promise<SearchHit[]> {
-  const q = site ? `site:${site} ${query}` : `${query} 官網`;
+async function searchDuckDuckGo(query: string, site?: string, suffix = ""): Promise<SearchHit[]> {
+  const q = site ? `site:${site} ${query}` : `${query}${suffix}`;
   const html = await fetchText(
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
     10000,
@@ -118,8 +121,9 @@ async function discoverOfficialProductUrls(query: string): Promise<string[]> {
 
 async function gatherSearchHits(query: string): Promise<SearchHit[]> {
   const known = BRAND_SITES.find((item) => item.match.test(query));
-  const [hits, siteHits, sitemapUrls] = await Promise.all([
-    searchDuckDuckGo(query),
+  const [hits, ingredientHits, siteHits, sitemapUrls] = await Promise.all([
+    searchDuckDuckGo(query, undefined, " 官網"),
+    searchDuckDuckGo(query, undefined, " 成分"),
     known ? searchDuckDuckGo(query, known.host) : Promise.resolve([] as SearchHit[]),
     discoverOfficialProductUrls(query),
   ]);
@@ -128,7 +132,7 @@ async function gatherSearchHits(query: string): Promise<SearchHit[]> {
     url,
     snippet: query,
   }));
-  return preferOfficialHits([...sitemapHits, ...siteHits, ...hits], query);
+  return preferOfficialHits([...sitemapHits, ...siteHits, ...ingredientHits, ...hits], query);
 }
 
 type WikiSearch = {
@@ -252,16 +256,20 @@ async function scrapeProductPage(url: string, query: string) {
   const og = extractOpenGraph(html);
   const images = extractHtmlImages(html);
   const nutrition = nutritionFromPage(text);
-  let ingredients = extractIngredients(text) || extractIngredientAlts(html);
+  let ingredients = extractIngredients(text);
+  if (!ingredients || isClipartIngredientLabel(ingredients)) {
+    const alts = extractIngredientAlts(html);
+    if (alts && !isClipartIngredientLabel(alts)) ingredients = alts;
+  }
   let ingredientNote: string | undefined;
   if (!ingredients || ingredients.length < 12) {
     const ocrText = (
       await Promise.all(extractIngredientImageUrls(html).slice(0, 2).map(ocrImageUrl))
     ).find(Boolean);
-    if (ocrText) {
+    if (ocrText && !isClipartIngredientLabel(ocrText)) {
       ingredients = ocrText;
       ingredientNote = "已從官網成份圖片辨識文字。";
-    } else if (extractIngredientImageUrls(html).length > 0) {
+    } else if (extractIngredientImageUrls(html).length > 0 && !ingredients) {
       ingredientNote =
         "官網成份是插圖／照片而非文字表，無法自動讀出完整配方；已依圖片標示或品名填入主要成份。";
     }
@@ -374,8 +382,12 @@ export async function lookupProduct(
     .map((page) => ({
       page,
       score:
-        nutritionFieldCount(page.nutrition) * 3 +
-        (page.ingredients ? 8 : 0) +
+        queryOverlapScore(
+          `${page.name ?? ""} ${page.url} ${page.description ?? ""} ${page.text?.slice(0, 800) ?? ""}`,
+          query,
+        ) +
+        nutritionFieldCount(page.nutrition) * 2 +
+        (page.ingredients ? 4 : 0) +
         scoreProductUrl(page.url, query),
     }))
     .sort((a, b) => b.score - a.score)[0]?.page;
@@ -398,12 +410,19 @@ export async function lookupProduct(
     inferBrand(query),
     inferBrand(combinedText),
   );
+  const rankedForCopy = [...scraped].sort(
+    (a, b) =>
+      queryOverlapScore(`${b.name ?? ""} ${b.url} ${b.ingredients ?? ""}`, query) -
+      queryOverlapScore(`${a.name ?? ""} ${a.url} ${a.ingredients ?? ""}`, query),
+  );
   const ingredients = refineIngredients(
-    [
-      officialPage?.ingredients,
-      scraped.find((page) => page.ingredients && !isCatalogNoise(page.ingredients))?.ingredients,
-      extractIngredients(combinedText),
-    ].find((value) => value && !isCatalogNoise(value)),
+    rankedForCopy.map((page) => page.ingredients).find((value) => {
+      return Boolean(value && (looksLikeIngredientList(value) || /\d+\s*%/.test(value)));
+    }) ??
+      pickIngredients([
+        ...rankedForCopy.map((page) => page.ingredients),
+        extractIngredients(combinedText),
+      ]),
     query,
   );
   const description = productDescription({
@@ -429,12 +448,16 @@ export async function lookupProduct(
       ? officialPage.packSizes
       : extractPackSizes(`${query} ${combinedText}`);
   const weight = packSizes[0] ?? extractWeightLabel(`${query} ${name} ${combinedText}`);
-  const querySpecies = inferSpecies(query);
-  const queryStages = inferLifeStages(query);
-  const species = querySpecies.length ? querySpecies : inferSpecies(combinedText);
+  const queryStages = inferLifeStages(`${query}\n${officialPage?.name ?? ""}`);
+  const species = inferProductSpecies(
+    query,
+    [officialPage?.name, officialPage?.description, officialPage?.highlights].filter(Boolean).join("\n"),
+  );
   const lifeStages = queryStages.length
     ? queryStages
-    : inferLifeStages(`${query}\n${officialPage?.highlights ?? ""}`);
+    : inferLifeStages(
+        `${query}\n${officialPage?.highlights ?? ""}\n${officialPage?.description ?? ""}`,
+      );
 
   const sources: { title: string; url: string }[] = [];
   if (officialPage) {
@@ -482,6 +505,8 @@ export async function lookupProduct(
     packSizes,
     priceDollars,
     sources,
-    notes: [officialPage?.ingredientNote].filter((note): note is string => Boolean(note)),
+    notes: [ingredients ? undefined : officialPage?.ingredientNote].filter(
+      (note): note is string => Boolean(note),
+    ),
   };
 }
