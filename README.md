@@ -28,13 +28,11 @@ Next.js 全端 + PostgreSQL + Prisma 打造的寵物用品網店。
 ## 快速開始
 
 ```bash
-# 1. 複製環境變數
+# 1. 複製環境變數（npm run db:migrate 也會在缺少 .env 時自動複製）
 cp .env.example .env
 
-# 2. 啟動 PostgreSQL（擇一）
-npx prisma dev          # Prisma 內建本地 Postgres
-# 或 Docker:
-# docker run -d --name pawmart-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=pawmart -p 5432:5432 postgres:16
+# 2. 用 Docker 啟動 PostgreSQL
+npm run db:up
 
 # 3. 資料庫遷移 & 種子資料
 npm run db:migrate
@@ -101,9 +99,12 @@ src/
 npm run dev          # 開發伺服器
 npm run build        # 正式建置
 npm run test         # 單元測試（FEFO / 點數 / CRM）
-npm run db:migrate   # 執行 migration
-npm run db:seed      # 載入種子資料
-npm run db:studio    # Prisma Studio GUI
+npm run db:up            # Docker Compose 啟動 Postgres
+npm run db:down          # 停止資料庫容器
+npm run db:migrate       # 套用既有 migration（deploy）
+npm run db:migrate:dev   # 開發時建立新 migration
+npm run db:seed          # 載入種子資料
+npm run db:studio        # Prisma Studio GUI
 ```
 
 排程 CRM（可選）：
