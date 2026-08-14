@@ -17,6 +17,8 @@ import {
   inferSpecies,
   isCatalogNoise,
   isGenericBrandCopy,
+  nutritionFromPage,
+  pickProductImage,
   preferOfficialHits,
   rankUrlsForQuery,
   refineIngredients,
@@ -162,6 +164,31 @@ describe("nutrition and inference", () => {
       'Main Ingredients:<img alt="mackerel.png" />Analytical constituents: Protein (min): 6.5';
     assert.match(extractIngredientAlts(html) ?? "", /mackerel/i);
     assert.equal(refineIngredients("mackerel", "Astkatta 冰島 鯖魚貓主食慕絲罐"), "鯖魚（Mackerel）");
+    const astkattaNutrition = nutritionFromPage(text);
+    assert.equal(astkattaNutrition.chondroitinMgPerKg, undefined);
+    assert.equal(astkattaNutrition.glucosamineMgPerKg, undefined);
+    const picked = pickProductImage(
+      [
+        {
+          url: "https://static.wixstatic.com/media/abc/mackerel.png/v1/fill/w_134,h_118/x.png",
+          alt: "mackerel.png",
+          width: 134,
+        },
+        {
+          url: "https://static.wixstatic.com/media/abc/Mousse%20Mackerel.jpg/v1/fill/w_373,h_291/x.jpg",
+          alt: "Mousse Mackerel.jpg",
+          width: 373,
+        },
+        {
+          url: "https://static.wixstatic.com/media/01c3aff52f2a4dffa526d7a9843d46ea.png",
+          alt: "Instagram",
+          width: 39,
+        },
+      ],
+      "Astkatta 冰島 鯖魚貓主食慕絲罐",
+    );
+    assert.match(picked ?? "", /w_1200/);
+    assert.match(picked ?? "", /abc/);
   });
 
   it("ranks mackerel mousse above other Astkatta recipes", () => {

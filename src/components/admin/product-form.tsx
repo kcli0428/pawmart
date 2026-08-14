@@ -107,23 +107,23 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
   function applyLookup(result: ProductLookupResult) {
     setName(result.name);
     if (result.slug) setSlug(result.slug);
-    if (result.brand) setBrand(result.brand);
-    if (result.categoryId) setCategoryId(result.categoryId);
-    if (result.imageUrl) setImageUrl(result.imageUrl);
-    if (result.description) setDescription(result.description);
-    if (result.proteinPct) setProteinPct(result.proteinPct);
-    if (result.fatPct) setFatPct(result.fatPct);
-    if (result.fiberPct) setFiberPct(result.fiberPct);
-    if (result.moisturePct) setMoisturePct(result.moisturePct);
-    if (result.ashPct) setAshPct(result.ashPct);
-    if (result.taurinePct) setTaurinePct(result.taurinePct);
-    if (result.kcalPer100g) setKcalPer100g(result.kcalPer100g);
-    if (result.chondroitinMgPerKg) setChondroitinMgPerKg(result.chondroitinMgPerKg);
-    if (result.glucosamineMgPerKg) setGlucosamineMgPerKg(result.glucosamineMgPerKg);
-    if (result.ingredients) setIngredients(result.ingredients);
+    setBrand(result.brand);
+    setCategoryId(result.categoryId);
+    setImageUrl(result.imageUrl);
+    setDescription(result.description);
+    setProteinPct(result.proteinPct);
+    setFatPct(result.fatPct);
+    setFiberPct(result.fiberPct);
+    setMoisturePct(result.moisturePct);
+    setAshPct(result.ashPct);
+    setTaurinePct(result.taurinePct);
+    setKcalPer100g(result.kcalPer100g);
+    setChondroitinMgPerKg(result.chondroitinMgPerKg);
+    setGlucosamineMgPerKg(result.glucosamineMgPerKg);
+    setIngredients(result.ingredients);
     if (result.suitableFor.length) setSuitableFor(result.suitableFor);
     if (result.lifeStages.length) setLifeStages(result.lifeStages);
-    if (result.allergenIds.length) setAllergenIds(result.allergenIds);
+    setAllergenIds(result.allergenIds);
     setVariants((current) => {
       if (current.some((item) => item.id)) {
         return current;
@@ -178,7 +178,14 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
         return;
       }
       applyLookup(data as ProductLookupResult);
-      setLookupMessage("已填入公開資料，請核對售價、營養與過敏原後再儲存。");
+      const extra = Array.isArray((data as ProductLookupResult).notes)
+        ? (data as ProductLookupResult).notes.filter(Boolean).join(" ")
+        : "";
+      setLookupMessage(
+        extra
+          ? `已填入公開資料。${extra}`
+          : "已填入公開資料，請核對售價、營養與過敏原後再儲存。",
+      );
     } catch {
       setLookupMessage("搜尋時發生錯誤，請稍後再試。");
     } finally {

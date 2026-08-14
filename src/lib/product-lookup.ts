@@ -1,11 +1,13 @@
 import { slugify } from "@/lib/utils";
+import { spawn } from "node:child_process";
 import {
   extractDuckDuckGoResults,
   extractHkdPrice,
+  extractHtmlImages,
   extractIngredientAlts,
+  extractIngredientImageUrls,
   extractIngredients,
   extractJsonLdProduct,
-  extractNutrition,
   extractOpenGraph,
   extractPackSizes,
   extractProductHighlights,
@@ -20,6 +22,9 @@ import {
   inferSpecies,
   isCatalogNoise,
   isGenericBrandCopy,
+  looksLikeIngredientList,
+  nutritionFromPage,
+  pickProductImage,
   preferOfficialHits,
   rankUrlsForQuery,
   refineIngredients,
@@ -207,22 +212,69 @@ async function searchOpenFoodFacts(query: string) {
   return null;
 }
 
-async function scrapeProductPage(url: string) {
+async function ocrImageUrl(url: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(url, {
+      headers: FETCH_HEADERS,
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return undefined;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length < 20_000 || buffer.length > 4_000_000) return undefined;
+    const text = await new Promise<string>((resolve, reject) => {
+      const child = spawn("tesseract", ["stdin", "stdout", "-l", "eng", "--psm", "6"], {
+        timeout: 8000,
+      });
+      let out = "";
+      child.stdout.on("data", (chunk) => {
+        out += String(chunk);
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) resolve(out);
+        else reject(new Error("ocr failed"));
+      });
+      child.stdin.end(buffer);
+    });
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    return looksLikeIngredientList(cleaned) ? cleaned : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function scrapeProductPage(url: string, query: string) {
   const html = await fetchText(url, 12000);
   if (!html) return null;
   const text = htmlToPlainText(html);
   const jsonLd = extractJsonLdProduct(html);
   const og = extractOpenGraph(html);
-  const nutrition = extractNutrition(text);
-  const ingredients =
-    extractIngredients(text) || extractIngredientAlts(html);
+  const images = extractHtmlImages(html);
+  const nutrition = nutritionFromPage(text);
+  let ingredients = extractIngredients(text) || extractIngredientAlts(html);
+  let ingredientNote: string | undefined;
+  if (!ingredients || ingredients.length < 12) {
+    const ocrText = (
+      await Promise.all(extractIngredientImageUrls(html).slice(0, 2).map(ocrImageUrl))
+    ).find(Boolean);
+    if (ocrText) {
+      ingredients = ocrText;
+      ingredientNote = "已從官網成份圖片辨識文字。";
+    } else if (extractIngredientImageUrls(html).length > 0) {
+      ingredientNote =
+        "官網成份是插圖／照片而非文字表，無法自動讀出完整配方；已依圖片標示或品名填入主要成份。";
+    }
+  }
   return {
     name: jsonLd.name || og.name,
     brand: jsonLd.brand,
     description: jsonLd.description || og.description,
-    imageUrl: jsonLd.imageUrl || og.imageUrl,
+    imageUrl:
+      pickProductImage(images, query) || jsonLd.imageUrl || og.imageUrl,
     priceHkdDollars: jsonLd.priceHkdDollars || extractHkdPrice(text),
     ingredients,
+    ingredientNote,
     highlights: extractProductHighlights(text),
     nutrition,
     packSizes: extractPackSizes(`${og.name ?? ""} ${text.slice(0, 4000)}`),
@@ -300,7 +352,7 @@ export async function lookupProduct(
     .slice(0, 8);
 
   const scraped = (
-    await Promise.all(pagesToFetch.map((url) => scrapeProductPage(url)))
+    await Promise.all(pagesToFetch.map((url) => scrapeProductPage(url, query)))
   ).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const wiki = wikiZh ?? wikiEn;
@@ -327,24 +379,15 @@ export async function lookupProduct(
         scoreProductUrl(page.url, query),
     }))
     .sort((a, b) => b.score - a.score)[0]?.page;
-  const pageNutrition = officialPage?.nutrition;
-  const parsedFromOfficial = officialPage?.text
-    ? extractNutrition(officialPage.text)
-    : undefined;
   const officialHasNutrition = nutritionFieldCount(officialPage?.nutrition ?? {}) >= 3;
   const nutrition = officialHasNutrition
-    ? mergeNutrition(parsedFromOfficial, pageNutrition)
-    : mergeNutrition(
-        parsedFromOfficial,
-        pageNutrition,
-        extractNutrition(combinedText),
-        {
-          proteinPct: off?.proteinPct,
-          fatPct: off?.fatPct,
-          fiberPct: off?.fiberPct,
-          kcalPer100g: off?.kcalPer100g,
-        },
-      );
+    ? (officialPage?.nutrition ?? {})
+    : mergeNutrition(officialPage?.nutrition, nutritionFromPage(combinedText), {
+        proteinPct: off?.proteinPct,
+        fatPct: off?.fatPct,
+        fiberPct: off?.fiberPct,
+        kcalPer100g: off?.kcalPer100g,
+      });
 
   const name = query;
 
@@ -439,5 +482,6 @@ export async function lookupProduct(
     packSizes,
     priceDollars,
     sources,
+    notes: [officialPage?.ingredientNote].filter((note): note is string => Boolean(note)),
   };
 }

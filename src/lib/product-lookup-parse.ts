@@ -149,6 +149,100 @@ export type NutritionFacts = {
   glucosamineMgPerKg?: number;
 };
 
+export type HtmlImage = {
+  url: string;
+  alt: string;
+  width: number;
+};
+
+function decodeHtmlAttr(value: string) {
+  return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"');
+}
+
+export function extractHtmlImages(html: string): HtmlImage[] {
+  const images: HtmlImage[] = [];
+  for (const tag of html.matchAll(/<img\b[^>]*>/gi)) {
+    const raw = tag[0];
+    const alt = decodeHtmlAttr(raw.match(/\balt=["']([^"']*)["']/i)?.[1] ?? "");
+    const src = decodeHtmlAttr(raw.match(/\bsrc=["']([^"']+)["']/i)?.[1] ?? "");
+    const srcset = decodeHtmlAttr(raw.match(/\bsrcset=["']([^"']+)["']/i)?.[1] ?? "");
+    const widthAttr = Number(raw.match(/\bwidth=["'](\d+)/i)?.[1] ?? 0);
+    const urls = [
+      src,
+      ...srcset
+        .split(",")
+        .map((part) => part.trim().split(/\s+/)[0] ?? "")
+        .filter(Boolean),
+    ];
+    for (const url of urls) {
+      if (!/^https?:\/\//i.test(url)) continue;
+      const fromPath = Number(url.match(/(?:\/fill\/w_|[?&]w=)(\d+)/i)?.[1] ?? 0);
+      images.push({ url, alt, width: Math.max(fromPath, widthAttr, 0) });
+    }
+  }
+  return images;
+}
+
+export function normalizeCdnImageUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes("wixstatic.com")) return url;
+    const media = `${parsed.origin}${parsed.pathname.replace(/\/v1\/.*$/, "")}`;
+    return `${media}/v1/fill/w_1200,h_900,al_c,q_85,enc_auto/product.jpg`;
+  } catch {
+    return url;
+  }
+}
+
+export function pickProductImage(images: HtmlImage[], query: string): string | undefined {
+  const q = query.toLowerCase();
+  const ranked = images
+    .map((image) => {
+      const hay = `${image.alt} ${image.url}`.toLowerCase();
+      let score = image.width / 25;
+      if (/instagram|facebook|logo|favicon|sprite|icon|pixel/.test(hay)) score -= 80;
+      if (image.width > 0 && image.width < 160) score -= 25;
+      if (/\.svg($|\?)/i.test(image.url)) score -= 20;
+      if (/\.jpe?g($|\?)/i.test(image.url) || /\.jpe?g["']/i.test(image.alt)) score += 12;
+      if (/mousse|pack|can|pouch|bag|product|配方|貓糧|狗糧/.test(hay)) score += 24;
+      if (/mackerel|鯖魚|ziwi|astkatta|royal/.test(hay)) score += 10;
+      if (/mackerel\.png|ingredient|clipart/.test(hay) && image.width < 500) score -= 20;
+      if (q.split(/\s+/).some((token) => token.length >= 4 && hay.includes(token.toLowerCase()))) {
+        score += 6;
+      }
+      return { ...image, score };
+    })
+    .filter((image) => image.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  return best ? normalizeCdnImageUrl(best.url) : undefined;
+}
+
+export function extractIngredientImageUrls(html: string): string[] {
+  const section = html.match(
+    /(?:main\s+ingredients|主要成[份分])[\s\S]{0,5000}?(?:analytical constituents|營養分析|保證分析)/i,
+  );
+  if (!section) return [];
+  return extractHtmlImages(section[0]).map((image) => image.url);
+}
+
+export function looksLikeIngredientList(text: string): boolean {
+  const value = text.replace(/\s+/g, " ").trim();
+  if (value.length < 8 || value.length > 800) return false;
+  if (/[，,]/.test(value) && /(魚|肉|雞|牛|羊|tuna|chicken|salmon|mackerel)/i.test(value)) return true;
+  if (/(魚|肉|雞|牛|羊|tuna|chicken|mackerel|salmon|sardine)/i.test(value) && value.split(" ").length >= 2) {
+    return true;
+  }
+  return false;
+}
+
+export function nutritionFromPage(text: string): NutritionFacts {
+  const facts = extractNutrition(text);
+  if (!/硫酸軟骨素|chondroitin/i.test(text)) facts.chondroitinMgPerKg = undefined;
+  if (!/葡萄糖胺|glucosamine/i.test(text)) facts.glucosamineMgPerKg = undefined;
+  return facts;
+}
+
 function parseLocaleNumber(raw: string) {
   const n = Number(raw.replace(/,/g, ""));
   return Number.isFinite(n) ? n : undefined;
@@ -612,6 +706,7 @@ export type ProductLookupResult = {
   packSizes: string[];
   priceDollars: string;
   sources: { title: string; url: string }[];
+  notes: string[];
 };
 
 export function suggestedSku(name: string) {
