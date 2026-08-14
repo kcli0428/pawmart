@@ -9,6 +9,7 @@ import {
   PET_SPECIES_LABELS,
   UNIT_TYPE_LABELS,
 } from "@/lib/constants";
+import type { ProductLookupResult } from "@/lib/product-lookup-parse";
 
 type VariantDraft = {
   id?: string;
@@ -19,6 +20,9 @@ type VariantDraft = {
   priceDollars: string;
   isActive: boolean;
 };
+
+type CategoryOption = { id: string; name: string; slug?: string };
+type AllergenOption = { id: string; nameZh: string | null; name: string };
 
 type ProductFormProps = {
   product?: {
@@ -39,8 +43,8 @@ type ProductFormProps = {
     allergenIds: string[];
     variants: VariantDraft[];
   };
-  categories: { id: string; name: string }[];
-  allergens: { id: string; nameZh: string | null; name: string }[];
+  categories: CategoryOption[];
+  allergens: AllergenOption[];
 };
 
 function emptyVariant(): VariantDraft {
@@ -59,38 +63,153 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
     saveProductAction,
     null,
   );
+  const [name, setName] = useState(product?.name ?? "");
+  const [slug, setSlug] = useState(product?.slug ?? "");
+  const [brand, setBrand] = useState(product?.brand ?? "");
+  const [categoryId, setCategoryId] = useState(product?.categoryId ?? "");
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [description, setDescription] = useState(product?.description ?? "");
+  const [isActive, setIsActive] = useState(product?.isActive ?? true);
+  const [proteinPct, setProteinPct] = useState(product?.proteinPct?.toString() ?? "");
+  const [fatPct, setFatPct] = useState(product?.fatPct?.toString() ?? "");
+  const [fiberPct, setFiberPct] = useState(product?.fiberPct?.toString() ?? "");
+  const [kcalPer100g, setKcalPer100g] = useState(product?.kcalPer100g?.toString() ?? "");
+  const [suitableFor, setSuitableFor] = useState<string[]>(product?.suitableFor ?? []);
+  const [lifeStages, setLifeStages] = useState<string[]>(product?.lifeStages ?? []);
+  const [allergenIds, setAllergenIds] = useState<string[]>(product?.allergenIds ?? []);
   const [variants, setVariants] = useState<VariantDraft[]>(
     product?.variants.length ? product.variants : [emptyVariant()],
   );
+  const [lookupPending, setLookupPending] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState("");
+  const [sources, setSources] = useState<{ title: string; url: string }[]>([]);
+
+  function toggle(list: string[], value: string) {
+    return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+  }
+
+  function applyLookup(result: ProductLookupResult) {
+    setName(result.name);
+    if (result.slug) setSlug(result.slug);
+    if (result.brand) setBrand(result.brand);
+    if (result.categoryId) setCategoryId(result.categoryId);
+    if (result.imageUrl) setImageUrl(result.imageUrl);
+    if (result.description) setDescription(result.description);
+    if (result.proteinPct) setProteinPct(result.proteinPct);
+    if (result.fatPct) setFatPct(result.fatPct);
+    if (result.fiberPct) setFiberPct(result.fiberPct);
+    if (result.kcalPer100g) setKcalPer100g(result.kcalPer100g);
+    if (result.suitableFor.length) setSuitableFor(result.suitableFor);
+    if (result.lifeStages.length) setLifeStages(result.lifeStages);
+    if (result.allergenIds.length) setAllergenIds(result.allergenIds);
+    setVariants((current) => {
+      const next = [...current];
+      if (!next[0]) next[0] = emptyVariant();
+      next[0] = {
+        ...next[0],
+        sku: next[0].sku || result.variantSku,
+        name: next[0].name || result.variantName,
+        priceDollars: next[0].priceDollars || result.priceDollars,
+        isActive: true,
+      };
+      return next;
+    });
+    setSources(result.sources);
+  }
+
+  async function handleLookup() {
+    if (!name.trim()) {
+      setLookupMessage("請先輸入商品名稱，再搜尋網上資料。");
+      return;
+    }
+    setLookupPending(true);
+    setLookupMessage("");
+    try {
+      const res = await fetch("/api/admin/product-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: name.trim(),
+          categories,
+          allergens,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLookupMessage(data.error ?? "搜尋失敗");
+        return;
+      }
+      applyLookup(data as ProductLookupResult);
+      setLookupMessage("已填入公開資料，請核對售價、營養與過敏原後再儲存。");
+    } catch {
+      setLookupMessage("搜尋時發生錯誤，請稍後再試。");
+    } finally {
+      setLookupPending(false);
+    }
+  }
 
   return (
     <form action={formAction} className="space-y-6">
       {product && <input type="hidden" name="id" value={product.id} />}
       <input type="hidden" name="variantCount" value={variants.length} />
 
+      <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4">
+        <p className="text-sm font-medium">從官網與網上搜尋並填入</p>
+        <p className="mt-1 text-xs text-zinc-600">
+          輸入商品名稱（建議含品牌，如「Royal Canin 幼貓乾糧」），系統會查找 Wikipedia、Open Food
+          Facts 與搜尋結果後自動填入。
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            name="name"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="商品名稱 *"
+            className="flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={lookupPending || pending}
+            onClick={handleLookup}
+          >
+            {lookupPending ? "搜尋中…" : "搜尋並填入"}
+          </Button>
+        </div>
+        {lookupMessage && (
+          <p className="mt-2 text-xs text-amber-800">{lookupMessage}</p>
+        )}
+        {sources.length > 0 && (
+          <ul className="mt-2 space-y-1 text-xs text-zinc-500">
+            {sources.map((source) => (
+              <li key={source.url}>
+                來源：{source.title}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2">
         <input
-          name="name"
-          required
-          defaultValue={product?.name}
-          placeholder="商品名稱 *"
-          className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
-        />
-        <input
           name="slug"
-          defaultValue={product?.slug}
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
           placeholder="網址 slug（可留空自動產生）"
           className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
         />
         <input
           name="brand"
-          defaultValue={product?.brand ?? ""}
+          value={brand}
+          onChange={(e) => setBrand(e.target.value)}
           placeholder="品牌"
           className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
         />
         <select
           name="categoryId"
-          defaultValue={product?.categoryId ?? ""}
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value)}
           className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
         >
           <option value="">未分類</option>
@@ -102,21 +221,37 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
         </select>
         <input
           name="imageUrl"
-          defaultValue={product?.imageUrl ?? ""}
+          value={imageUrl}
+          onChange={(e) => setImageUrl(e.target.value)}
           placeholder="圖片 URL（選填）"
-          className="md:col-span-2 rounded-lg border border-amber-200 px-3 py-2 text-sm"
+          className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
         />
         <textarea
           name="description"
-          defaultValue={product?.description ?? ""}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
           placeholder="商品描述"
           rows={3}
           className="md:col-span-2 rounded-lg border border-amber-200 px-3 py-2 text-sm"
         />
       </div>
 
+      {imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt={name || "商品圖片預覽"}
+          className="h-32 w-32 rounded-xl object-cover"
+        />
+      )}
+
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="isActive" defaultChecked={product?.isActive ?? true} />
+        <input
+          type="checkbox"
+          name="isActive"
+          checked={isActive}
+          onChange={(e) => setIsActive(e.target.checked)}
+        />
         上架
       </label>
 
@@ -127,7 +262,8 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
             name="proteinPct"
             type="number"
             step="0.1"
-            defaultValue={product?.proteinPct ?? ""}
+            value={proteinPct}
+            onChange={(e) => setProteinPct(e.target.value)}
             placeholder="蛋白質 %"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
@@ -135,7 +271,8 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
             name="fatPct"
             type="number"
             step="0.1"
-            defaultValue={product?.fatPct ?? ""}
+            value={fatPct}
+            onChange={(e) => setFatPct(e.target.value)}
             placeholder="脂肪 %"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
@@ -143,7 +280,8 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
             name="fiberPct"
             type="number"
             step="0.1"
-            defaultValue={product?.fiberPct ?? ""}
+            value={fiberPct}
+            onChange={(e) => setFiberPct(e.target.value)}
             placeholder="纖維 %"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
@@ -151,7 +289,8 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
             name="kcalPer100g"
             type="number"
             step="0.1"
-            defaultValue={product?.kcalPer100g ?? ""}
+            value={kcalPer100g}
+            onChange={(e) => setKcalPer100g(e.target.value)}
             placeholder="kcal / 100g"
             className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
           />
@@ -167,7 +306,8 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                 type="checkbox"
                 name="suitableFor"
                 value={value}
-                defaultChecked={product?.suitableFor.includes(value)}
+                checked={suitableFor.includes(value)}
+                onChange={() => setSuitableFor((current) => toggle(current, value))}
               />
               {label}
             </label>
@@ -184,7 +324,8 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                 type="checkbox"
                 name="lifeStages"
                 value={value}
-                defaultChecked={product?.lifeStages.includes(value)}
+                checked={lifeStages.includes(value)}
+                onChange={() => setLifeStages((current) => toggle(current, value))}
               />
               {label}
             </label>
@@ -202,7 +343,10 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                   type="checkbox"
                   name="allergenId"
                   value={allergen.id}
-                  defaultChecked={product?.allergenIds.includes(allergen.id)}
+                  checked={allergenIds.includes(allergen.id)}
+                  onChange={() =>
+                    setAllergenIds((current) => toggle(current, allergen.id))
+                  }
                 />
                 {allergen.nameZh ?? allergen.name}
               </label>
@@ -234,19 +378,40 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
               )}
               <input
                 name={`variantSku_${index}`}
-                defaultValue={variant.sku}
+                value={variant.sku}
+                onChange={(e) =>
+                  setVariants((current) =>
+                    current.map((item, i) =>
+                      i === index ? { ...item, sku: e.target.value } : item,
+                    ),
+                  )
+                }
                 placeholder="SKU"
                 className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
               />
               <input
                 name={`variantName_${index}`}
-                defaultValue={variant.name}
+                value={variant.name}
+                onChange={(e) =>
+                  setVariants((current) =>
+                    current.map((item, i) =>
+                      i === index ? { ...item, name: e.target.value } : item,
+                    ),
+                  )
+                }
                 placeholder="規格名稱"
                 className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
               />
               <select
                 name={`variantUnitType_${index}`}
-                defaultValue={variant.unitType}
+                value={variant.unitType}
+                onChange={(e) =>
+                  setVariants((current) =>
+                    current.map((item, i) =>
+                      i === index ? { ...item, unitType: e.target.value } : item,
+                    ),
+                  )
+                }
                 className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
               >
                 {Object.entries(UNIT_TYPE_LABELS).map(([value, label]) => (
@@ -259,7 +424,16 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                 name={`variantUnitsPerCase_${index}`}
                 type="number"
                 min={1}
-                defaultValue={variant.unitsPerCase}
+                value={variant.unitsPerCase}
+                onChange={(e) =>
+                  setVariants((current) =>
+                    current.map((item, i) =>
+                      i === index
+                        ? { ...item, unitsPerCase: Number(e.target.value) || 1 }
+                        : item,
+                    ),
+                  )
+                }
                 placeholder="每箱件數"
                 className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
               />
@@ -268,7 +442,14 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                 type="number"
                 min={0}
                 step="0.01"
-                defaultValue={variant.priceDollars}
+                value={variant.priceDollars}
+                onChange={(e) =>
+                  setVariants((current) =>
+                    current.map((item, i) =>
+                      i === index ? { ...item, priceDollars: e.target.value } : item,
+                    ),
+                  )
+                }
                 placeholder="售價 HKD"
                 className="rounded-lg border border-amber-200 px-3 py-2 text-sm"
               />
@@ -276,7 +457,14 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
                 <input
                   type="checkbox"
                   name={`variantActive_${index}`}
-                  defaultChecked={variant.isActive}
+                  checked={variant.isActive}
+                  onChange={(e) =>
+                    setVariants((current) =>
+                      current.map((item, i) =>
+                        i === index ? { ...item, isActive: e.target.checked } : item,
+                      ),
+                    )
+                  }
                 />
                 上架
               </label>
@@ -286,7 +474,7 @@ export function ProductForm({ product, categories, allergens }: ProductFormProps
       </div>
 
       {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending || lookupPending}>
         {pending ? "儲存中…" : product ? "更新商品" : "建立商品"}
       </Button>
     </form>

@@ -16,6 +16,9 @@ export default async function NewProductPage() {
         ← 返回商品列表
       </Link>
       <h1 className="mt-2 text-3xl font-bold">新增商品</h1>
+      <p className="mt-1 text-sm text-zinc-600">
+        輸入名稱後按「搜尋並填入」，可從官網與公開資料自動帶出品牌、描述、圖片與營養。
+      </p>
       <div className="mt-8 rounded-2xl border border-amber-100 bg-white p-6">
         <ProductForm categories={categories} allergens={allergens} />
       </div>
