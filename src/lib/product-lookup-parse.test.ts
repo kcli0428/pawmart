@@ -21,6 +21,8 @@ import {
   isCatalogNoise,
   isClipartIngredientLabel,
   isGenericBrandCopy,
+  isOfficialOrPublicUrl,
+  hasRetailerCopy,
   nutritionFromPage,
   pickIngredients,
   pickProductImage,
@@ -267,29 +269,25 @@ describe("nutrition and inference", () => {
     const kidneyPicked = pickProductImage(
       [
         {
-          url: "https://www.gogopet.com.hk/wp-content/uploads/2023/05/cropped-GoGoPet_SB.jpg",
-          alt: "GoGoPet development limited",
+          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/2000x-2_wm-300x300.jpg",
+          alt: "Astkatta 冰島腎臟主食包 - Kidney Care Complete Food - 雞肉絲清湯 50g",
           width: 1000,
         },
         {
-          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/ad-banner.jpg",
-          alt: "Shop promo banner",
-          width: 1200,
-        },
-        {
-          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/tuna-pottage.jpg",
-          alt: "Astkatta 冰島腎臟主食包 - 吞拿魚濃湯 50g",
-          width: 300,
-        },
-        {
-          url: "https://www.gogopet.com.hk/wp-content/uploads/2024/06/chicken-soup.jpg",
-          alt: "Astkatta 冰島腎臟主食包 - Kidney Care Complete Food - 雞肉絲清湯 50g",
-          width: 300,
+          url: "https://static.wixstatic.com/media/abc/kidney-chicken-soup.jpg",
+          alt: "Chicken Meat & Soup Kidney Care 雞肉絲清湯",
+          width: 400,
         },
       ],
       kidneyQuery,
     );
-    assert.match(kidneyPicked ?? "", /chicken-soup/);
+    assert.match(kidneyPicked ?? "", /kidney-chicken-soup/);
+    assert.equal(isOfficialOrPublicUrl("https://www.gogopet.com.hk/product/x", kidneyQuery), false);
+    assert.equal(
+      isOfficialOrPublicUrl("https://www.astkatta.com/kidney-care-series", kidneyQuery),
+      true,
+    );
+    assert.equal(hasRetailerCopy("GoGoPet 天下貓貓 雞肉絲清湯"), true);
   });
 
   it("ranks mackerel mousse above other Astkatta recipes", () => {
@@ -373,5 +371,9 @@ describe("nutrition and inference", () => {
       "Royal Canin kitten",
     );
     assert.equal(ranked[0].url.includes("royalcanin.com"), true);
+    assert.equal(
+      ranked.some((hit) => hit.url.includes("amazon")),
+      false,
+    );
   });
 });

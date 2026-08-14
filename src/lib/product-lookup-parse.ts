@@ -155,6 +155,54 @@ export type HtmlImage = {
   width: number;
 };
 
+const PUBLIC_HOST_RE = /(?:^|\.)(?:wikipedia\.org|wikimedia\.org|openfoodfacts\.org)$/i;
+
+const OFFICIAL_BRAND_HOSTS = [
+  "astkatta.com",
+  "ziwipetshk.com",
+  "ziwi.com",
+  "ziwipets.com",
+  "royalcanin.com",
+  "hillspet.com",
+  "purina.com",
+  "orijenpetfoods.com",
+  "orijen.com",
+  "acana.com",
+  "wellnesspetfood.com",
+];
+
+const RETAILER_HOST_RE =
+  /gogopet|megapet|petincharge|vetopia|hktvmall|price\.com\.hk|pethome|petcity|hkdog|a-pets|spca\.org|amazon|shopee|lazada|taobao|tmall|facebook|instagram|pethouse|petpet|pawfect/i;
+
+const RETAILER_COPY_RE =
+  /gogopet|mega\s*pet|pet in charge|petincharge|vetopia|hktvmall|天下貓貓|petpethome|petwise|price\.com\.hk|pethome|petcity/i;
+
+export function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function isRetailerUrl(url: string): boolean {
+  return RETAILER_HOST_RE.test(hostnameOf(url)) || RETAILER_HOST_RE.test(url);
+}
+
+export function isOfficialOrPublicUrl(url: string, query = ""): boolean {
+  const host = hostnameOf(url);
+  if (!host || isRetailerUrl(url)) return false;
+  if (PUBLIC_HOST_RE.test(host)) return true;
+  if (OFFICIAL_BRAND_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))) return true;
+  const brand = inferBrand(query)?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
+  if (brand.length >= 4 && host.replace(/[^a-z0-9]+/g, "").includes(brand)) return true;
+  return false;
+}
+
+export function hasRetailerCopy(text: string): boolean {
+  return RETAILER_COPY_RE.test(text);
+}
+
 function decodeHtmlAttr(value: string) {
   return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"');
 }
@@ -207,9 +255,8 @@ export function pickProductImage(images: HtmlImage[], query: string): string | u
       ) {
         score -= 80;
       }
-      if (/gogopet|petincharge|petpet|shop|store|development limited/.test(hay) && !/astkatta|ziwi|royal/.test(hay)) {
-        score -= 50;
-      }
+      if (/_wm\b|watermark|浮水印/.test(hay)) score -= 90;
+      if (isRetailerUrl(image.url) || RETAILER_COPY_RE.test(hay)) score -= 120;
       if (image.width > 0 && image.width < 160) score -= 25;
       if (/\.svg($|\?)/i.test(image.url)) score -= 20;
       if (/\.jpe?g($|\?)/i.test(image.url) || /\.jpe?g["']/i.test(image.alt)) score += 8;
@@ -229,7 +276,7 @@ export function pickProductImage(images: HtmlImage[], query: string): string | u
 
 export function isLikelyAdOrLogoImage(url: string, alt = ""): boolean {
   const hay = `${alt} ${url}`.toLowerCase();
-  return /logo|favicon|banner|sprite|\bicon\b|advert|doubleclick|cropped-|header|slider|badge|adservice/.test(
+  return /logo|favicon|banner|sprite|\bicon\b|advert|doubleclick|cropped-|header|slider|badge|adservice|_wm\b|watermark|浮水印/.test(
     hay,
   );
 }
@@ -833,19 +880,19 @@ export function preferOfficialHits(hits: SearchHit[], query: string): SearchHit[
     if (host.includes("wikipedia.org")) value += 6;
     if (host.includes("openfoodfacts.org")) value += 8;
     if (brand && host.replace(/[^a-z0-9]+/g, "").includes(brand)) value += 10;
-    if (/royalcanin|hillspet|purina|orijen|acana|ziwipets/.test(host)) value += 8;
+    if (/royalcanin|hillspet|purina|orijen|acana|ziwipets|astkatta/.test(host)) value += 8;
     value += scoreProductUrl(hit.url, query);
     value += queryOverlapScore(`${hit.title} ${hit.url} ${hit.snippet}`, query);
-    if (/hktvmall|price\.com\.hk|pethome|petcity|megapet|vetopia|spca\.org|a-pets|hkdog|gogopet/.test(host)) {
-      value += 5;
-    }
-    if (/amazon|facebook|youtube|instagram/.test(host)) value -= 4;
+    if (isRetailerUrl(hit.url)) value -= 40;
+    if (/amazon|facebook|youtube|instagram/.test(host)) value -= 8;
     if (hit.title.toLowerCase().includes(q.slice(0, 12))) value += 2;
     if (/\.pdf($|\?)/i.test(hit.url)) value -= 6;
     return value;
   };
 
-  return [...hits].sort((a, b) => score(b) - score(a));
+  return [...hits]
+    .filter((hit) => isOfficialOrPublicUrl(hit.url, query))
+    .sort((a, b) => score(b) - score(a));
 }
 
 export type ProductLookupResult = {

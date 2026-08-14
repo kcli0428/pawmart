@@ -25,6 +25,9 @@ import {
   isClipartIngredientLabel,
   isGenericBrandCopy,
   isLikelyAdOrLogoImage,
+  isOfficialOrPublicUrl,
+  isRetailerUrl,
+  hasRetailerCopy,
   looksLikeIngredientList,
   nutritionFromPage,
   pickIngredients,
@@ -123,9 +126,8 @@ async function discoverOfficialProductUrls(query: string): Promise<string[]> {
 
 async function gatherSearchHits(query: string): Promise<SearchHit[]> {
   const known = BRAND_SITES.find((item) => item.match.test(query));
-  const [hits, ingredientHits, siteHits, sitemapUrls] = await Promise.all([
+  const [hits, siteHits, sitemapUrls] = await Promise.all([
     searchDuckDuckGo(query, undefined, " 官網"),
-    searchDuckDuckGo(query, undefined, " 成分"),
     known ? searchDuckDuckGo(query, known.host) : Promise.resolve([] as SearchHit[]),
     discoverOfficialProductUrls(query),
   ]);
@@ -134,7 +136,7 @@ async function gatherSearchHits(query: string): Promise<SearchHit[]> {
     url,
     snippet: query,
   }));
-  return preferOfficialHits([...sitemapHits, ...siteHits, ...ingredientHits, ...hits], query);
+  return preferOfficialHits([...sitemapHits, ...siteHits, ...hits], query);
 }
 
 type WikiSearch = {
@@ -154,9 +156,15 @@ async function searchWikipedia(query: string, lang: "zh" | "en") {
   const search = await fetchJson<WikiSearch>(
     `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&format=json`,
   );
-  const first = search?.query?.search?.[0];
+  const first = search?.query?.search?.find((item) => {
+    if (/mounted police|air force|navy|disambiguation/i.test(item.title)) return false;
+    const brand = inferBrand(query);
+    if (brand && !new RegExp(brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(item.title)) {
+      return false;
+    }
+    return Boolean(item.title);
+  });
   if (!first?.title) return null;
-  if (/mounted police|air force|navy|disambiguation/i.test(first.title)) return null;
 
   const extract = await fetchJson<WikiExtract>(
     `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&exintro=1&explaintext=1&piprop=thumbnail&pithumbsize=800&titles=${encodeURIComponent(first.title)}&format=json`,
@@ -198,7 +206,13 @@ async function searchOpenFoodFacts(query: string) {
 
   for (const url of urls) {
     const data = await fetchJson<OffSearch>(url);
-    const product = data?.products?.find((item) => item.product_name);
+    const brand = inferBrand(query);
+    const product = data?.products?.find((item) => {
+      if (!item.product_name) return false;
+      if (!brand) return true;
+      const hay = `${item.product_name} ${item.brands ?? ""}`.toLowerCase();
+      return hay.includes(brand.toLowerCase());
+    });
     if (!product) continue;
     const nutriments = product.nutriments ?? {};
     return {
@@ -311,6 +325,7 @@ function usableCopy(text: string | undefined, query: string): string | undefined
   if (!text) return undefined;
   const value = text.replace(/\s*\|\s*www\.[^\s|]+/gi, "").trim();
   if (!value || isCatalogNoise(value) || isGenericBrandCopy(value, query)) return undefined;
+  if (hasRetailerCopy(value)) return undefined;
   if (/^https?:\/\//i.test(value)) return undefined;
   return value;
 }
@@ -363,8 +378,8 @@ export async function lookupProduct(
   ]);
 
   const pagesToFetch = [...new Set([...extractUrlsFromQuery(query), ...ddgHits.map((hit) => hit.url)])]
-    .filter((url) => !/\.pdf($|\?)/i.test(url))
-    .slice(0, 8);
+    .filter((url) => !/\.pdf($|\?)/i.test(url) && isOfficialOrPublicUrl(url, query))
+    .slice(0, 6);
 
   const scraped = (
     await Promise.all(pagesToFetch.map((url) => scrapeProductPage(url, query)))
@@ -444,9 +459,14 @@ export async function lookupProduct(
     wiki: wiki?.description,
   });
   const imageUrl = firstText(
-    officialPage?.imageUrl,
-    rankedForCopy.find((page) => page.imageUrl && !isLikelyAdOrLogoImage(page.imageUrl, page.name ?? ""))
-      ?.imageUrl,
+    officialPage?.imageUrl && !isRetailerUrl(officialPage.imageUrl) ? officialPage.imageUrl : undefined,
+    rankedForCopy.find(
+      (page) =>
+        page.imageUrl &&
+        !isRetailerUrl(page.imageUrl) &&
+        !isLikelyAdOrLogoImage(page.imageUrl, page.name ?? "") &&
+        isOfficialOrPublicUrl(page.url, query),
+    )?.imageUrl,
   );
   const queryWeight = extractWeightLabel(query);
   const packSizes = queryWeight
